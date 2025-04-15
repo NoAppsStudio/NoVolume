@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:padding="16dp">
+
+    <!-- Overlay Permission Row -->
+    <LinearLayout
+        android:id="@+id/overlayPermissionLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="100dp"
+        android:layout_centerHorizontal="true"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_alignParentTop="true">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Grant Overlay Permission"
+            android:textColor="@color/white"
+            android:fontFamily="@font/ntype"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/overlayPermissionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Go"
+            android:textColor="@android:color/white"
+            android:fontFamily="@font/ntype"
+            android:backgroundTint="@color/red" />
+    </LinearLayout>
+
+    <!-- Accessibility Settings Row -->
+    <LinearLayout
+        android:id="@+id/accessibilitySettingsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/overlayPermissionLayout"
+        android:layout_marginTop="20dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_centerHorizontal="true">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Open Accessibility Settings"
+            android:textColor="@color/white"
+            android:fontFamily="@font/ntype"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/accessibilitySettingsButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Go"
+            android:textColor="@android:color/white"
+            android:fontFamily="@font/ntype"
+            android:backgroundTint="@color/red" />
+    </LinearLayout>
+
+    <!-- Overlay Position Label -->
+    <TextView
+        android:id="@+id/overlayPositionLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Overlay Vertical Position"
+        android:textColor="@color/white"
+        android:fontFamily="@font/ntype"
+        android:textSize="18sp"
+        android:layout_below="@id/accessibilitySettingsLayout"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp" />
+
+    <!-- SeekBar -->
+    <SeekBar
+        android:id="@+id/overlayPositionSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/overlayPositionLabel"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:max="999"
+        android:progress="499"
+        android:progressTint="@color/white"
+        android:thumbTint="@color/white" />
+
+    <!-- Volume Sensitivity Label -->
+    <TextView
+        android:id="@+id/volumeSensitivityLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Volume Change Sensitivity"
+        android:textColor="@color/white"
+        android:fontFamily="@font/ntype"
+        android:textSize="18sp"
+        android:layout_below="@id/overlayPositionSlider"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp" />
+
+    <SeekBar
+        android:id="@+id/volumeSensitivitySlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/volumeSensitivityLabel"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:max="90"
+        android:progress="45"
+        android:progressTint="@color/white"
+        android:thumbTint="@color/white" />
+</RelativeLayout>

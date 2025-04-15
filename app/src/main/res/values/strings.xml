@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">NoVolumeSlider</string>
+    <string name="accessibility_service_label">Volume Key Interceptor</string>
+    <string name="accessibility_service_description">Intercepts volume key presses to show a custom volume slider</string>
+</resources>

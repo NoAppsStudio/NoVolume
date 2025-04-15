@@ -1,0 +1,20 @@
+<!-- res/drawable/custom_progress_bar.xml -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <solid android:color="#50E40E"/>
+            <corners android:radius="10dp"/>
+        </shape>
+    </item>
+
+    <item android:right="0dp">
+        <rotate
+            android:fromDegrees="0"
+            android:toDegrees="270">
+            <shape>
+                <solid android:color="#ffffff"/>
+                <corners android:radius="10dp"/>
+            </shape>
+        </rotate>
+    </item>
+</layer-list>

@@ -1,0 +1,384 @@
+package com.nostudio.novolumeslider
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.util.Log
+import android.view.Gravity
+import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.TextView
+import androidx.core.app.NotificationCompat
+import kotlin.math.pow
+import kotlin.math.sqrt
+
+class VolumeOverlayService : Service() {
+
+    private lateinit var windowManager: WindowManager
+    private lateinit var overlayView: View
+    private lateinit var fullScreenTouchView: View // Full screen touch view
+    private lateinit var audioManager: AudioManager
+    private lateinit var volumeDial: VolumeDialView
+    private lateinit var volumeNumber: TextView
+
+    private val hideNumberHandler = Handler(Looper.getMainLooper())
+    private val hideOverlayHandler = Handler(Looper.getMainLooper())
+
+    private val hideNumberRunnable = Runnable {
+        volumeNumber.visibility = View.INVISIBLE
+    }
+
+    private val hideOverlayRunnable = Runnable {
+        hideOverlayCompletely()
+    }
+
+    private var preciseVolumeLevel = 0
+
+    // Flag to track if user is currently touching the dial
+    private var isTouching = false
+
+    private var accumulatedYOffset: Float = 0f
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d("VolumeOverlayService", "Service created")
+
+        createNotificationChannel()
+        startForegroundServiceWithNotification()
+
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // Inflate the overlay layout
+        overlayView = LayoutInflater.from(this).inflate(R.layout.custom_volume_overlay, null)
+
+        // Get references to our views
+        volumeDial = overlayView.findViewById(R.id.volumeDial)
+        volumeNumber = overlayView.findViewById(R.id.volumeNumber)
+
+        // Set up the touch volume change listener
+        volumeDial.setOnVolumeChangeListener(object : VolumeDialView.OnVolumeChangeListener {
+            override fun onVolumeChanged(volume: Int) {
+                // Update system volume
+                updateSystemVolume(volume)
+
+                // Update UI
+                volumeNumber.text = volume.toString()
+                volumeNumber.visibility = View.VISIBLE
+
+                // Don't hide number while touching
+                hideNumberHandler.removeCallbacks(hideNumberRunnable)
+            }
+
+            override fun onTouchStart() {
+                // User started touching the dial
+                isTouching = true
+
+                // Cancel any pending hide operations
+                hideNumberHandler.removeCallbacks(hideNumberRunnable)
+                hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+
+                Log.d("VolumeOverlayService", "Touch started on dial")
+            }
+
+            override fun onTouchEnd() {
+                // User stopped touching the dial
+                isTouching = false
+
+                // Schedule hiding the number after 1ms
+                hideNumberHandler.postDelayed(hideNumberRunnable, 1000)
+
+                // Schedule hiding the overlay after 1ms
+                hideOverlayHandler.postDelayed(hideOverlayRunnable, 1000)
+
+                Log.d("VolumeOverlayService", "Touch ended on dial")
+            }
+
+            override fun onDismiss() {
+                // Hide overlay immediately when dismissed
+                hideOverlayCompletely()
+                Log.d("VolumeOverlayService", "Overlay dismissed by outside tap")
+            }
+        })
+
+        // Create full-screen touch view for detecting taps outside
+        fullScreenTouchView = View(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    // Check if the touch is outside the dial
+                    val dialLocation = IntArray(2)
+                    volumeDial.getLocationOnScreen(dialLocation)
+
+                    val dialCenterX = dialLocation[0] + volumeDial.width / 2
+                    val dialCenterY = dialLocation[1] + volumeDial.height / 2
+                    val dialRadius = Math.min(volumeDial.width, volumeDial.height) / 2
+
+                    val touchX = event.rawX
+                    val touchY = event.rawY
+                    val distance = sqrt((touchX - dialCenterX).toDouble().pow(2.0) + (touchY - dialCenterY).toDouble().pow(2.0))
+
+                    if (distance > dialRadius) {
+                        hideOverlayCompletely()
+                        volumeDial.volumeChangeListener?.onDismiss()
+                        return@setOnTouchListener true
+                    }
+                }
+                false
+            }
+        }
+
+        // Create layout parameters for the full-screen touch view
+        val fullScreenParams = WindowManager.LayoutParams().apply {
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            format = PixelFormat.TRANSLUCENT
+            width = WindowManager.LayoutParams.MATCH_PARENT
+            height = WindowManager.LayoutParams.MATCH_PARENT
+            gravity = Gravity.CENTER
+        }
+
+        try {
+            // Add full-screen touch view to window
+            windowManager.addView(fullScreenTouchView, fullScreenParams)
+            fullScreenTouchView.visibility = View.GONE // Initially hidden
+            Log.d("VolumeOverlayService", "Full screen touch view added")
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error adding full-screen touch view: ${e.message}")
+        }
+
+        // Create overlay layout parameters
+        val params = WindowManager.LayoutParams().apply {
+            type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            format = PixelFormat.TRANSLUCENT
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            gravity = Gravity.CENTER
+            windowAnimations = android.R.style.Animation_Activity
+        }
+
+        try {
+            windowManager.addView(overlayView, params)
+            overlayView.visibility = View.GONE // Initially hidden
+            Log.d("VolumeOverlayService", "Overlay view added")
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error adding overlay view: ${e.message}")
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("VolumeOverlayService", "onStartCommand called")
+
+        if (intent != null) {
+            // Get volume from intent
+            val currentVolume = intent.getIntExtra("CURRENT_VOLUME", -1)
+            val maxVolume = intent.getIntExtra("MAX_VOLUME", -1)
+
+            if (currentVolume != -1 && maxVolume != -1) {
+                Log.d("VolumeOverlayService", "Received volume: $currentVolume/$maxVolume")
+
+                // Convert to percentage (0-100)
+                val volumePercentage = (currentVolume * 100) / maxVolume
+                updateVolumeUI(volumePercentage)
+            } else {
+                // If no volume data, use current system volume
+                val volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val volumePercentage = (volume * 100) / max
+                updateVolumeUI(volumePercentage)
+            }
+        }
+
+        if (intent?.action == "SHOW_OVERLAY") {
+            showOverlay()
+        }
+
+        if (intent?.action == "HIDE_OVERLAY") {
+            hideOverlayCompletely()
+        }
+
+        if (intent?.action == "UPDATE_OVERLAY_POSITION") {
+            val position = intent.getIntExtra("POSITION", 50)
+            updateOverlayPosition(position)
+        }
+        if (intent?.action != "HIDE_OVERLAY") {
+            showOverlay()
+        }
+
+
+        return START_NOT_STICKY
+    }
+
+    private fun updateVolumeUI(volumePercentage: Int) {
+        // Update the stored precise volume level
+        preciseVolumeLevel = volumePercentage
+
+        // Update the dial view
+        volumeDial.volume = volumePercentage
+
+        // Update the number
+        volumeNumber.text = volumePercentage.toString()
+        volumeNumber.visibility = View.VISIBLE
+
+        // Only schedule hiding if not currently touching
+        if (!isTouching) {
+            // Schedule the number to disappear after 1 second
+            hideNumberHandler.removeCallbacks(hideNumberRunnable)
+            hideNumberHandler.postDelayed(hideNumberRunnable, 1000)
+        }
+    }
+
+    private fun updateSystemVolume(volumePercentage: Int) {
+        preciseVolumeLevel = volumePercentage
+
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val newVolume = (volumePercentage * maxVolume) / 100  // Convert 100 steps to system range
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Android 9+ (Pie) - Use hidden API for fine control
+            try {
+                val audioSystemClass = Class.forName("android.media.AudioSystem")
+                val setVolumeIndexMethod = audioSystemClass.getMethod(
+                    "setStreamVolumeIndex",
+                    Int::class.java,
+                    Int::class.java,
+                    Int::class.java
+                )
+
+                val DEVICE_OUT_SPEAKER = 2 // Speaker output device
+                val preciseIndex = (volumePercentage * 1000) / 100  // Scale for precision
+
+                setVolumeIndexMethod.invoke(null, AudioManager.STREAM_MUSIC, preciseIndex, DEVICE_OUT_SPEAKER)
+
+                // Also update system UI to match
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+            } catch (e: Exception) {
+                Log.e("VolumeOverlayService", "Error setting precise volume: ${e.message}")
+                // Fallback to standard volume setting
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+            }
+        } else {
+            // Older Android versions (Fallback)
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+        }
+
+        Log.d("VolumeOverlayService", "System volume set to $volumePercentage%")
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "overlay_service_channel",
+                "Overlay Service",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+    }
+
+    private fun startForegroundServiceWithNotification() {
+        val notification = NotificationCompat.Builder(this, "overlay_service_channel")
+            .setContentTitle("Volume Control")
+            .setContentText("Custom volume control is active")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+
+        startForeground(1, notification)
+    }
+
+    private fun showOverlay() {
+        // Make both views visible
+        overlayView.visibility = View.VISIBLE
+
+        // Make the full screen view touchable and visible
+        val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
+        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        windowManager.updateViewLayout(fullScreenTouchView, params)
+        fullScreenTouchView.visibility = View.VISIBLE
+
+        Log.d("VolumeOverlayService", "Overlay shown")
+
+        // Only schedule hiding if not currently touching
+        if (!isTouching) {
+            // Schedule hide after 1 second
+            hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 1000)
+        }
+    }
+
+    private fun hideOverlayCompletely() {
+        // Immediately make the overlay invisible
+        overlayView.visibility = View.GONE
+
+        // Make the full-screen touch view non-interactive AND invisible
+        fullScreenTouchView.visibility = View.GONE
+
+        // Update the parameters to make sure it doesn't intercept touches
+        val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
+        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        try {
+            windowManager.updateViewLayout(fullScreenTouchView, params)
+            Log.d("VolumeOverlayService", "Full screen touch view set to not touchable")
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error updating full screen view params: ${e.message}")
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::windowManager.isInitialized) {
+            if (::overlayView.isInitialized) {
+                try {
+                    windowManager.removeView(overlayView)
+                    Log.d("VolumeOverlayService", "Overlay view removed")
+                } catch (e: Exception) {
+                    Log.e("VolumeOverlayService", "Error removing overlay view: ${e.message}")
+                }
+            }
+
+            if (::fullScreenTouchView.isInitialized) {
+                try {
+                    windowManager.removeView(fullScreenTouchView)
+                    Log.d("VolumeOverlayService", "Full-screen touch view removed")
+                } catch (e: Exception) {
+                    Log.e("VolumeOverlayService", "Error removing full-screen touch view: ${e.message}")
+                }
+            }
+        }
+
+        hideNumberHandler.removeCallbacks(hideNumberRunnable)
+        hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+    }
+
+    private fun updateOverlayPosition(position: Int) {
+        val screenHeight = windowManager.defaultDisplay.height
+        val mappedPosition = position - 500
+        val yOffset = ((mappedPosition / 1000f) * screenHeight).toInt()
+
+        val params = overlayView.layoutParams as WindowManager.LayoutParams
+        params.y = yOffset
+
+        try {
+            windowManager.updateViewLayout(overlayView, params)
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error updating overlay position: ${e.message}")
+        }
+    }
+}
