@@ -98,11 +98,11 @@ class VolumeOverlayService : Service() {
                 // User stopped touching the dial
                 isTouching = false
 
-                // Schedule hiding the number after 1ms
-                hideNumberHandler.postDelayed(hideNumberRunnable, 1000)
+                // Schedule hiding the number after 1.5 seconds (this should be a setting btw)
+                hideNumberHandler.postDelayed(hideNumberRunnable, 1500)
 
-                // Schedule hiding the overlay after 1ms
-                hideOverlayHandler.postDelayed(hideOverlayRunnable, 1000)
+                // Schedule hiding the overlay after 1.5 seconds
+                hideOverlayHandler.postDelayed(hideOverlayRunnable, 1500)
 
                 Log.d("VolumeOverlayService", "Touch ended on dial")
             }
