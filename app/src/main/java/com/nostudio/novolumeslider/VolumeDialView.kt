@@ -134,7 +134,7 @@ class VolumeDialView @JvmOverloads constructor(
                 // Only animate if we're not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
-                        duration = 120 // Adjust duration for smooth animation
+                        duration = 150 // Adjust duration for smooth animation  (adjusted for smoother by Aleks)
                         start()
                     }
                 } else {
@@ -342,13 +342,14 @@ class VolumeDialView @JvmOverloads constructor(
                 val dy = Math.abs(y - initialTouchY)
 
                 // If movement exceeds threshold, process as a slide
-                if (dx > touchThreshold || dy > touchThreshold) {
+                if (dy > touchThreshold) { // we only need the y here, right?
                     hasMoved = true
-
+                    
+                    // HAPTIC FEEDBACK HANDLER should be inserted here
+                    
                     // Calculate delta and accumulate it
                     val deltaY = lastTouchY - y // Invert direction
                     accumulatedDelta += deltaY
-
 
                     val prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
                     val sensitivity = prefs.getFloat("volume_sensitivity", 0.5f)
@@ -389,7 +390,7 @@ class VolumeDialView @JvmOverloads constructor(
         return false
     }
 
-    // Helper function to calculate angle from touch point
+    // Helper function to calculate angle from touch point (do we still need this? the new controls are better...)
     private fun calculateAngleFromTouch(x: Float, y: Float): Float {
         // Calculate the angle of touch relative to the center
         val touchX = x - centerX
