@@ -26,6 +26,7 @@ class VolumeDialView @JvmOverloads constructor(
         fun onTouchStart()
         fun onTouchEnd()
         fun onDismiss() // New callback for dismissal
+        fun onSlideRight()
     }
 
     // Listener variable
@@ -390,6 +391,15 @@ class VolumeDialView @JvmOverloads constructor(
                     // Save current position for next comparison
                     lastTouchY = y
                 }
+                val horizontalDelta = x - initialTouchX
+                if (horizontalDelta > 50 && dx > 2 * dy && !hasMoved) {
+                    // Significant slide to the right, trigger action
+                    hasMoved = true
+                    isTouching = false
+                    volumeChangeListener?.onSlideRight()
+                    return true
+                }
+
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

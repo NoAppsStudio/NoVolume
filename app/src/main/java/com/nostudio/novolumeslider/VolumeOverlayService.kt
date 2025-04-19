@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -111,6 +112,13 @@ class VolumeOverlayService : Service() {
                 // Hide overlay immediately when dismissed
                 hideOverlayCompletely()
                 Log.d("VolumeOverlayService", "Overlay dismissed by outside tap")
+            }
+
+            override fun onSlideRight() {  // Add this method
+                hideOverlayCompletely()
+                // Open classic Android volume bar
+                showSystemVolumeBar()
+                Log.d("VolumeOverlayService", "Slide right detected, opening classic volume bar")
             }
         })
 
@@ -380,5 +388,14 @@ class VolumeOverlayService : Service() {
         } catch (e: Exception) {
             Log.e("VolumeOverlayService", "Error updating overlay position: ${e.message}")
         }
+    }
+
+    private fun showSystemVolumeBar() {
+        try {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI)
+        } catch (e: SecurityException) {
+            Log.e("VolumeOverlayService", "SecurityException showing system volume bar: ${e.message}")
+        }
+
     }
 }
