@@ -11,6 +11,7 @@ import android.animation.ObjectAnimator
 import androidx.core.content.res.ResourcesCompat
 import android.view.MotionEvent
 import kotlin.math.atan2
+import android.view.ViewTreeObserver
 import kotlin.math.roundToInt
 
 class VolumeDialView @JvmOverloads constructor(
@@ -51,6 +52,16 @@ class VolumeDialView @JvmOverloads constructor(
         super.onAttachedToWindow()
         setupClickThroughBehavior() // Set up click-through behavior when attached
         showWithSlideInFromLeft() // Apply the animation when the view is attached
+
+        // Add a global layout listener to detect orientation changes
+        viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                // Check if the layout has changed (e.g., due to orientation change)
+                if (width != measuredWidth || height != measuredHeight) {
+                    onSizeChanged(measuredWidth, measuredHeight, 0, 0)
+                }
+            }
+        })
     }
 
     private fun setupClickThroughBehavior() {
@@ -86,7 +97,7 @@ class VolumeDialView @JvmOverloads constructor(
     private var isTouching = false
 
     private val backgroundPaint = Paint().apply {
-        color = Color.parseColor("#F5F5F5") //make this a variable 
+        color = Color.parseColor("#F5F5F5") //make this a variable
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -175,14 +186,13 @@ class VolumeDialView @JvmOverloads constructor(
         layoutParams?.leftMargin = 0 // Ensure no left margin
         layoutParams?.rightMargin = 0 // Optional: reset any right margin
         requestLayout() // Trigger a layout pass
-        val padding = 80f // Adjust this value as needed
+        val padding = 80f
 
         // Calculate the radius
         radius = Math.min(w, h) / 2f - padding
         centerX = 0f
         centerY = h / 2f
 
-        // Set the progress arc radius slightly larger than the background circle
         progressArcRadius = radius + 60f
 
         oval.set(centerX - progressArcRadius, centerY - progressArcRadius, centerX + progressArcRadius, centerY + progressArcRadius)
@@ -346,9 +356,9 @@ class VolumeDialView @JvmOverloads constructor(
                 // If movement exceeds threshold, process as a slide
                 if (dy > touchThreshold) { // we only need the y here, right?
                     hasMoved = true
-                    
+
                     // HAPTIC FEEDBACK HANDLER should be inserted here
-                    
+
                     // Calculate delta and accumulate it
                     val deltaY = lastTouchY - y // Invert direction
                     accumulatedDelta += deltaY
@@ -391,24 +401,6 @@ class VolumeDialView @JvmOverloads constructor(
 
         return false
     }
-
-    // Helper function to calculate angle from touch point (do we still need this? the new controls are better...)
-    private fun calculateAngleFromTouch(x: Float, y: Float): Float {
-        // Calculate the angle of touch relative to the center
-        val touchX = x - centerX
-        val touchY = y - centerY
-
-        // Calculate angle in radians, then convert to degrees
-        var angle = Math.toDegrees(atan2(touchY.toDouble(), touchX.toDouble())).toFloat()
-
-        // Normalize to 0-360 range
-        if (angle < 0) angle += 360
-
-        return angle
-    }
-
-
-
 
     private fun updateVolumeFromTouch(x: Float, y: Float) {
         // Calculate the angle of touch relative to the actual center

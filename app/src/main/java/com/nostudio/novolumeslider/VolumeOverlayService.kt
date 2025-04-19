@@ -167,7 +167,7 @@ class VolumeOverlayService : Service() {
             format = PixelFormat.TRANSLUCENT
             width = WindowManager.LayoutParams.WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
-            gravity = Gravity.CENTER
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL // Align to the left and center vertically
             windowAnimations = android.R.style.Animation_Activity
         }
 
