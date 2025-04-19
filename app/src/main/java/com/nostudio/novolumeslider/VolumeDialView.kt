@@ -86,7 +86,7 @@ class VolumeDialView @JvmOverloads constructor(
     private var isTouching = false
 
     private val backgroundPaint = Paint().apply {
-        color = Color.parseColor("#F5F5F5")
+        color = Color.parseColor("#F5F5F5") //make this a variable 
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -102,7 +102,7 @@ class VolumeDialView @JvmOverloads constructor(
     private val markerPaint = Paint().apply {
         color = Color.RED
         style = Paint.Style.STROKE
-        strokeWidth = 3f
+        strokeWidth = 4f //slightly bolder
         isAntiAlias = true
     }
 
@@ -111,6 +111,7 @@ class VolumeDialView @JvmOverloads constructor(
         style = Paint.Style.FILL
         isAntiAlias = true
         strokeWidth = 7f
+        strokeCap = Paint.Cap.ROUND // Rounded ends for this too
     }
 
     private val numbersPaint = Paint().apply {
@@ -134,7 +135,8 @@ class VolumeDialView @JvmOverloads constructor(
                 // Only animate if we're not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
-                        duration = 120 // Adjust duration for smooth animation
+                        duration = 150 // Adjust duration for smooth animation  (adjusted for smoother by Aleks)
+                        //add haptic here too (10ms or 20ms)
                         start()
                     }
                 } else {
@@ -342,13 +344,14 @@ class VolumeDialView @JvmOverloads constructor(
                 val dy = Math.abs(y - initialTouchY)
 
                 // If movement exceeds threshold, process as a slide
-                if (dx > touchThreshold || dy > touchThreshold) {
+                if (dy > touchThreshold) { // we only need the y here, right?
                     hasMoved = true
-
+                    
+                    // HAPTIC FEEDBACK HANDLER should be inserted here
+                    
                     // Calculate delta and accumulate it
                     val deltaY = lastTouchY - y // Invert direction
                     accumulatedDelta += deltaY
-
 
                     val prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
                     val sensitivity = prefs.getFloat("volume_sensitivity", 0.5f)
@@ -389,7 +392,7 @@ class VolumeDialView @JvmOverloads constructor(
         return false
     }
 
-    // Helper function to calculate angle from touch point
+    // Helper function to calculate angle from touch point (do we still need this? the new controls are better...)
     private fun calculateAngleFromTouch(x: Float, y: Float): Float {
         // Calculate the angle of touch relative to the center
         val touchX = x - centerX
