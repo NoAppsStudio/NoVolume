@@ -358,7 +358,7 @@ class VolumeOverlayService : Service() {
 
                 AnimatorSet().apply {
                     playTogether(slideInAnim, fadeInAnim)
-                    duration = 800
+                    duration = 400
                     interpolator = DecelerateInterpolator(1.2f)
 
                     doOnEnd {
@@ -394,7 +394,7 @@ class VolumeOverlayService : Service() {
 
         AnimatorSet().apply {
             playTogether(slideInAnim, fadeInAnim)
-            duration = 900
+            duration = 400
 
             doOnEnd {
                 isShowingAnimation = false
@@ -424,7 +424,7 @@ class VolumeOverlayService : Service() {
 
             AnimatorSet().apply {
                 playTogether(slideOutAnim, fadeOutAnim)
-                duration = 300
+                duration = 400
                 start()
                 doOnEnd {
                     overlayView.visibility = View.GONE
