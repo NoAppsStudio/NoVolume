@@ -335,7 +335,7 @@ class VolumeDialView @JvmOverloads constructor(
         val distance = Math.sqrt(((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)).toDouble()).toFloat()
 
         // Ignore touches outside the dial
-        if (distance > radius) {
+       if (distance > radius+200f) {
             return false
         }
 
@@ -372,7 +372,7 @@ class VolumeDialView @JvmOverloads constructor(
 
                     // Only change volume when accumulated delta is enough
                     // This allows for fine-grained control
-                    if (Math.abs(accumulatedDelta) >= 1f / sensitivity) {
+                    if (Math.abs(accumulatedDelta) >= 2f / sensitivity) {
                         val volumeDelta = (accumulatedDelta * sensitivity).roundToInt()
 
                         // Calculate new volume based on relative movement
@@ -392,7 +392,7 @@ class VolumeDialView @JvmOverloads constructor(
                     lastTouchY = y
                 }
                 val horizontalDelta = x - initialTouchX
-                if (horizontalDelta > 50 && dx > 2 * dy && !hasMoved) {
+                if (horizontalDelta > 50 && dx >  dy && !hasMoved) {
                     // Significant slide to the right, trigger action
                     hasMoved = true
                     isTouching = false
