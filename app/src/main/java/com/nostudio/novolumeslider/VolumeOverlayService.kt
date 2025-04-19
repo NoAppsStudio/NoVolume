@@ -1,11 +1,13 @@
 package com.nostudio.novolumeslider
 
+import android.animation.AnimatorSet
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.animation.ObjectAnimator
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.os.Build
@@ -19,7 +21,11 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import androidx.core.content.edit
 import android.widget.TextView
+import androidx.core.animation.doOnEnd
+import androidx.core.animation.doOnStart
 import androidx.core.app.NotificationCompat
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -32,6 +38,8 @@ class VolumeOverlayService : Service() {
     private lateinit var audioManager: AudioManager
     private lateinit var volumeDial: VolumeDialView
     private lateinit var volumeNumber: TextView
+
+    private val prefs by lazy { getSharedPreferences("volume_slider_prefs", Context.MODE_PRIVATE) }
 
     private val hideNumberHandler = Handler(Looper.getMainLooper())
     private val hideOverlayHandler = Handler(Looper.getMainLooper())
@@ -50,6 +58,10 @@ class VolumeOverlayService : Service() {
     private var isTouching = false
 
     private var accumulatedYOffset: Float = 0f
+
+    private var isOverlayVisible = false
+
+    private var isShowingAnimation = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -100,10 +112,10 @@ class VolumeOverlayService : Service() {
                 isTouching = false
 
                 // Schedule hiding the number after 1.5 seconds (this should be a setting btw)
-                hideNumberHandler.postDelayed(hideNumberRunnable, 1500)
+                hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
 
                 // Schedule hiding the overlay after 1.5 seconds
-                hideOverlayHandler.postDelayed(hideOverlayRunnable, 1500)
+                hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
 
                 Log.d("VolumeOverlayService", "Touch ended on dial")
             }
@@ -119,6 +131,13 @@ class VolumeOverlayService : Service() {
                 // Open classic Android volume bar
                 showSystemVolumeBar()
                 Log.d("VolumeOverlayService", "Slide right detected, opening classic volume bar")
+            }
+        })
+
+        volumeDial.setInteractionListener(object : VolumeDialView.InteractionListener {
+            override fun onInteractionStart() {
+                if (isShowingAnimation) return
+                // Interaction is allowed, proceed with touch handling
             }
         })
 
@@ -175,7 +194,7 @@ class VolumeOverlayService : Service() {
             format = PixelFormat.TRANSLUCENT
             width = WindowManager.LayoutParams.WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL // Align to the left and center vertically
+            gravity = Gravity.TOP or Gravity.START // Align to the top-left corner
             windowAnimations = android.R.style.Animation_Activity
         }
 
@@ -188,8 +207,13 @@ class VolumeOverlayService : Service() {
         }
     }
 
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("VolumeOverlayService", "onStartCommand called")
+
+        // Load saved vertical offset
+        val savedYOffset = prefs.getInt("overlay_y_offset", 0)
+        updateOverlayPosition(savedYOffset)
 
         if (intent != null) {
             // Get volume from intent
@@ -246,7 +270,7 @@ class VolumeOverlayService : Service() {
         if (!isTouching) {
             // Schedule the number to disappear after 1 second
             hideNumberHandler.removeCallbacks(hideNumberRunnable)
-            hideNumberHandler.postDelayed(hideNumberRunnable, 1000)
+            hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
         }
     }
 
@@ -312,40 +336,116 @@ class VolumeOverlayService : Service() {
     }
 
     private fun showOverlay() {
-        // Make both views visible
-        overlayView.visibility = View.VISIBLE
+        // val bezierRevealView = overlayView.findViewById<BezierRevealView>(R.id.bezierRevealView)
 
-        // Make the full screen view touchable and visible
-        val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
-        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        windowManager.updateViewLayout(fullScreenTouchView, params)
-        fullScreenTouchView.visibility = View.VISIBLE
+        if (overlayView.visibility != View.VISIBLE) {
+            isOverlayVisible = true
+            isShowingAnimation = true
 
-        Log.d("VolumeOverlayService", "Overlay shown")
+            // Position the overlay initially
+            overlayView.translationX = -overlayView.width.toFloat() * 0.5f
+            overlayView.alpha = 0f
+            overlayView.visibility = View.VISIBLE
+
+            // First start the bezier animation
+            //   bezierRevealView.visibility = View.VISIBLE
+            //  bezierRevealView.startRevealAnimation()
+
+            // Then with a slight delay, start sliding in the actual overlay
+            Handler(Looper.getMainLooper()).postDelayed({
+                val slideInAnim = ObjectAnimator.ofFloat(overlayView, "translationX", -overlayView.width.toFloat() * 0.5f, 0f)
+                val fadeInAnim = ObjectAnimator.ofFloat(overlayView, "alpha", 0f, 1f)
+
+                AnimatorSet().apply {
+                    playTogether(slideInAnim, fadeInAnim)
+                    duration = 800
+                    interpolator = DecelerateInterpolator(1.2f)
+
+                    doOnEnd {
+                        isShowingAnimation = false
+                    }
+                    start()
+                }
+            }, 100) // 100ms delay before starting the slide animation
+
+            Log.d("VolumeOverlayService", "Overlay shown with animations")
+
+            // Make the full-screen touch view touchable and visible
+            val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            windowManager.updateViewLayout(fullScreenTouchView, params)
+            fullScreenTouchView.visibility = View.VISIBLE
+        } else {
+            Log.d("VolumeOverlayService", "Overlay already visible, skipping show animation")
+        }
 
         // Only schedule hiding if not currently touching
         if (!isTouching) {
-            // Schedule hide after 1 second
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-            hideOverlayHandler.postDelayed(hideOverlayRunnable, 1000)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
         }
     }
 
+    private fun playSlideAndFadeInAnimation(bezierRevealView: BezierRevealView) {
+        // startBezierAnimation(bezierRevealView)
+
+        val slideInAnim = ObjectAnimator.ofFloat(overlayView, "translationX", -overlayView.width.toFloat(), 0f)
+        val fadeInAnim = ObjectAnimator.ofFloat(overlayView, "alpha", 0f, 1f)
+
+        AnimatorSet().apply {
+            playTogether(slideInAnim, fadeInAnim)
+            duration = 900
+
+            doOnEnd {
+                isShowingAnimation = false
+            }
+            start()
+        }
+    }
+
+    /* private fun startBezierAnimation(bezierRevealView: BezierRevealView) {
+         bezierRevealView.visibility = View.VISIBLE
+         bezierRevealView.startRevealAnimation()
+     }*/
+
+
     private fun hideOverlayCompletely() {
-        // Immediately make the overlay invisible
-        overlayView.visibility = View.GONE
+        if (overlayView.visibility != View.GONE) {
+            isShowingAnimation = true
+            isOverlayVisible = false
 
-        // Make the full-screen touch view non-interactive AND invisible
-        fullScreenTouchView.visibility = View.GONE
+            // Get bezier view for fade out
+            //   val bezierRevealView = overlayView.findViewById<BezierRevealView>(R.id.bezierRevealView)
+            //    bezierRevealView.fadeOut()
 
-        // Update the parameters to make sure it doesn't intercept touches
-        val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
-        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        try {
-            windowManager.updateViewLayout(fullScreenTouchView, params)
-            Log.d("VolumeOverlayService", "Full screen touch view set to not touchable")
-        } catch (e: Exception) {
-            Log.e("VolumeOverlayService", "Error updating full screen view params: ${e.message}")
+            // Slide out to the left and fade out
+            val slideOutAnim = ObjectAnimator.ofFloat(overlayView, "translationX", 0f, -overlayView.width.toFloat() * 0.5f)
+            val fadeOutAnim = ObjectAnimator.ofFloat(overlayView, "alpha", 1f, 0f)
+
+            AnimatorSet().apply {
+                playTogether(slideOutAnim, fadeOutAnim)
+                duration = 300
+                start()
+                doOnEnd {
+                    overlayView.visibility = View.GONE
+                    overlayView.alpha = 0f
+                    isShowingAnimation = false
+                }
+            }
+
+            Log.d("VolumeOverlayService", "Overlay hidden with animations")
+
+            // Make the full-screen touch view non-interactive AND invisible
+            fullScreenTouchView.visibility = View.GONE
+
+            // Update the parameters to make sure it doesn't intercept touches
+            val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            try {
+                windowManager.updateViewLayout(fullScreenTouchView, params)
+            } catch (e: Exception) {
+                Log.e("VolumeOverlayService", "Error updating full screen view params: ${e.message}")
+            }
         }
     }
 
@@ -375,13 +475,12 @@ class VolumeOverlayService : Service() {
         hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
     }
 
-    private fun updateOverlayPosition(position: Int) {
-        val screenHeight = windowManager.defaultDisplay.height
-        val mappedPosition = position - 500
-        val yOffset = ((mappedPosition / 1000f) * screenHeight).toInt()
-
+    private fun updateOverlayPosition(yOffset: Int) {
         val params = overlayView.layoutParams as WindowManager.LayoutParams
         params.y = yOffset
+
+        // Save the yOffset to SharedPreferences
+        prefs.edit { putInt("overlay_y_offset", yOffset) }
 
         try {
             windowManager.updateViewLayout(overlayView, params)

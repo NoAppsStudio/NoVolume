@@ -47,11 +47,11 @@ class MainActivity : AppCompatActivity() {
 
         val positionSlider: SeekBar = findViewById(R.id.overlayPositionSlider)
 
-        positionSlider.max = 999
+        positionSlider.max = 2000
 
         // Retrieve saved position from SharedPreferences
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedPosition = prefs.getInt("overlay_position", 499) // Default to 499
+        val savedPosition = prefs.getInt("overlay_position", 1000) // Default to 499
 
         positionSlider.progress = savedPosition
 

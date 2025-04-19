@@ -86,8 +86,8 @@
         android:layout_below="@id/overlayPositionLabel"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
-        android:max="999"
-        android:progress="499"
+        android:max="2000"
+        android:progress="1000"
         android:progressTint="@color/white"
         android:thumbTint="@color/white" />
 

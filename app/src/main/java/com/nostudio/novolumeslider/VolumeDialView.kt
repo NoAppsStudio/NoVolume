@@ -5,6 +5,7 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.View
 import android.widget.FrameLayout
+import android.os.Handler
 import kotlin.math.cos
 import kotlin.math.sin
 import android.animation.ObjectAnimator
@@ -12,6 +13,8 @@ import androidx.core.content.res.ResourcesCompat
 import android.view.MotionEvent
 import kotlin.math.atan2
 import android.view.ViewTreeObserver
+import android.view.animation.DecelerateInterpolator
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 class VolumeDialView @JvmOverloads constructor(
@@ -29,6 +32,16 @@ class VolumeDialView @JvmOverloads constructor(
         fun onSlideRight()
     }
 
+    interface InteractionListener {
+        fun onInteractionStart()
+    }
+
+    private var interactionListener: InteractionListener? = null
+
+    fun setInteractionListener(listener: InteractionListener) {
+        interactionListener = listener
+    }
+
     // Listener variable
     public var volumeChangeListener: OnVolumeChangeListener? = null
 
@@ -37,17 +50,32 @@ class VolumeDialView @JvmOverloads constructor(
         volumeChangeListener = listener
     }
 
+    private var isAnimating = false
+
     fun showWithSlideInFromLeft() {
-        this.translationX = -width.toFloat()
-        this.alpha = 0f
-        post { // Ensures the animation runs after layout calculations
+        if (isAnimating) return
+        isAnimating = true
+
+        post {
+            this.translationX = -width.toFloat()
+            this.alpha = 0f
+
             this.animate()
                 .translationX(0f)
                 .alpha(1f)
-                .setDuration(300)
+                .setInterpolator(DecelerateInterpolator())
+                .setDuration(600)
+                .withEndAction {
+                    isAnimating = false
+                }
                 .start()
         }
     }
+
+    fun setAnimationDuration(duration: Int) {
+        animationDuration = duration
+    }
+
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -61,8 +89,7 @@ class VolumeDialView @JvmOverloads constructor(
                 if (width != measuredWidth || height != measuredHeight) {
                     onSizeChanged(measuredWidth, measuredHeight, 0, 0)
                 }
-            }
-        })
+            }        })
     }
 
     private fun setupClickThroughBehavior() {
@@ -104,7 +131,7 @@ class VolumeDialView @JvmOverloads constructor(
     }
 
     private val progressPaint = Paint().apply {
-        color = Color.WHITE
+        color = Color.WHITE // White progress bar
         style = Paint.Style.STROKE
         strokeWidth = 24f
         isAntiAlias = true
@@ -147,7 +174,7 @@ class VolumeDialView @JvmOverloads constructor(
                 // Only animate if we're not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
-                        duration = 150 // Adjust duration for smooth animation  (adjusted for smoother by Aleks)
+                        duration = 90 // Adjust duration for smooth animation  (adjusted for smoother by Aleks)
                         //add haptic here too (10ms or 20ms)
                         start()
                     }
@@ -165,6 +192,8 @@ class VolumeDialView @JvmOverloads constructor(
             field = value
             invalidate() // Redraw at each step for animation effect
         }
+
+    private var animationDuration: Int = 600
 
     fun pxToDp(context: Context, px: Int): Int {
         val density = context.resources.displayMetrics.density
@@ -329,13 +358,20 @@ class VolumeDialView @JvmOverloads constructor(
     private var accumulatedDelta = 0f // Accumulate small movements for fine control
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Call interaction listener at the beginning
+        interactionListener?.onInteractionStart()
+
+        // Check if interaction is allowed
+        if (!isInteractionAllowed()) {
+            return false // Ignore the touch event if not allowed
+        }
         val x = event.x
         val y = event.y
 
         val distance = Math.sqrt(((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)).toDouble()).toFloat()
 
         // Ignore touches outside the dial
-       if (distance > radius+200f) {
+        if (distance > radius+200f) {
             return false
         }
 
@@ -410,6 +446,10 @@ class VolumeDialView @JvmOverloads constructor(
         }
 
         return false
+    }
+
+    open fun isInteractionAllowed(): Boolean {
+        return true // Interaction is allowed by default
     }
 
     private fun updateVolumeFromTouch(x: Float, y: Float) {
