@@ -1,3 +1,5 @@
+#[Download here, it's finally on the play store!](https://play.google.com/store/apps/details?id=com.nostudio.novolumeslider)
+
 ### Beautiful NothingOS themed volume wheel, designed for nothing phones primarily.
 
 # This app is in a early state, so these are the things to watch out for:
