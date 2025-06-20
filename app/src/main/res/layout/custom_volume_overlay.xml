@@ -12,7 +12,7 @@
         <FrameLayout
             android:id="@+id/volumeDialContainer"
             android:layout_width="match_parent"
-            android:layout_height="290dp"
+            android:layout_height="350dp"
             android:layout_marginStart="0dp"
             android:layout_marginEnd="0dp"
             android:padding="0dp"
@@ -24,9 +24,9 @@
             <com.nostudio.novolumeslider.VolumeDialView
                 android:id="@+id/volumeDial"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_margin="0dp"
-                android:layout_gravity="center_vertical"
+                android:layout_gravity="start|center_vertical"
                 android:padding="0dp" />
 
             <com.nostudio.novolumeslider.BezierRevealView
@@ -40,12 +40,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_vertical"
-                android:gravity="left"
+                android:layout_marginStart="80dp"
+                android:gravity="center"
                 android:text="64"
                 android:textColor="@color/black"
                 android:textSize="36sp"
                 android:textStyle="normal"
-                android:paddingHorizontal="10dp"
                 android:fontFamily="@font/ntype"/>
         </FrameLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>

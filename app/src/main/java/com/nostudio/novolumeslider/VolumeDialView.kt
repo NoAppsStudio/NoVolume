@@ -16,6 +16,11 @@ import android.view.ViewTreeObserver
 import android.view.animation.DecelerateInterpolator
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import android.view.HapticFeedbackConstants
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.Build
+import android.view.Gravity
 
 class VolumeDialView @JvmOverloads constructor(
     context: Context,
@@ -171,6 +176,12 @@ class VolumeDialView @JvmOverloads constructor(
         set(value) {
             val newValue = value.coerceIn(0, 100)
             if (field != newValue) {
+                // Trigger haptic feedback for volume changes
+                if (lastVolumeForHaptic != newValue && lastVolumeForHaptic != -1) {
+                    performHapticFeedback()
+                }
+                lastVolumeForHaptic = newValue
+
                 // Only animate if we're not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
@@ -195,6 +206,65 @@ class VolumeDialView @JvmOverloads constructor(
 
     private var animationDuration: Int = 600
 
+    // Wheel size scaling factor (0.5 to 1.5)
+    private var scaleFactor: Float = 1.0f
+
+    // Haptic feedback properties
+    private var isHapticEnabled: Boolean = true
+    private var vibrator: Vibrator? = null
+    private var lastVolumeForHaptic: Int = -1
+    private var hapticStrength: Int = 1 // 0=Low, 1=Medium, 2=High
+
+    init {
+        vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+
+    fun setHapticEnabled(enabled: Boolean) {
+        isHapticEnabled = enabled
+    }
+
+    fun setHapticStrength(strength: Int) {
+        hapticStrength = strength.coerceIn(0, 2)
+    }
+
+    private fun performHapticFeedback() {
+        if (!isHapticEnabled) return
+
+        // Haptic strength
+        val duration = when (hapticStrength) {
+            0 -> 25L  // Low -> High duration
+            1 -> 15L  // Medium
+            2 -> 5L   // High -> Low duration
+            else -> 15L
+        }
+
+        val amplitude = when (hapticStrength) {
+            0 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE else 150     // Low -> High amplitude
+            1 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100 // Medium
+            2 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 4 else 50  // High -> Low amplitude
+            else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(duration, amplitude))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(duration)
+            }
+        } catch (e: Exception) {
+            // Fallback to view haptic feedback
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        }
+    }
+
+    fun setWheelSize(scaleFactor: Float) {
+        this.scaleFactor = scaleFactor.coerceIn(0.6f, 1.1f)
+        // Trigger size recalculation
+        onSizeChanged(width, height, 0, 0)
+        invalidate()
+    }
+
     fun pxToDp(context: Context, px: Int): Int {
         val density = context.resources.displayMetrics.density
         return (px / density).toInt()
@@ -211,19 +281,34 @@ class VolumeDialView @JvmOverloads constructor(
         val parentLayout = parent as? FrameLayout
         parentLayout?.layoutParams?.width = screenWidth
 
-        // Align the view to the left (adjust X position)
+        // Align the view to the left (adjust X position) - FIXED ALIGNMENT
         val layoutParams = layoutParams as? FrameLayout.LayoutParams
-        layoutParams?.leftMargin = 0 // Ensure no left margin
-        layoutParams?.rightMargin = 0 // Optional: reset any right margin
-        requestLayout() // Trigger a layout pass
-        val padding = 80f
+        layoutParams?.leftMargin = 0
+        layoutParams?.rightMargin = 0
+        layoutParams?.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        requestLayout()
 
-        // Calculate the radius
-        radius = Math.min(w, h) / 2f - padding
-        centerX = 0f
+        // Base dimensions for semi-circle
+        val basePadding = 40f // Reduced padding for closer to edge
+        val baseRadius = Math.min(w, h) / 2f - basePadding
+
+        // Apply scaling
+        radius = baseRadius * scaleFactor
+
+        // Position for semi-circle - center should be AT the screen edge
+        centerX = 0f // Center at screen edge for perfect semi-circle
         centerY = h / 2f
 
-        progressArcRadius = radius + 60f
+        // Scale progress arc radius proportionally
+        progressArcRadius = radius + (60f * scaleFactor)
+
+        // Update paint stroke widths to scale with size
+        progressPaint.strokeWidth = 24f * scaleFactor
+        markerPaint.strokeWidth = 4f * scaleFactor
+        indicatorPaint.strokeWidth = 7f * scaleFactor
+
+        // Scale text size for numbers on the dial
+        numbersPaint.textSize = 48f * scaleFactor
 
         oval.set(centerX - progressArcRadius, centerY - progressArcRadius, centerX + progressArcRadius, centerY + progressArcRadius)
     }
@@ -237,14 +322,17 @@ class VolumeDialView @JvmOverloads constructor(
         // Save the canvas state before transformations
         canvas.save()
 
-        // Draw the full background circle
+        // Clip to only show the right half (semi-circle)
+        canvas.clipRect(centerX, 0f, width.toFloat(), height.toFloat())
+
+        // Draw the full background circle (but only right half will be visible)
         canvas.drawCircle(centerX, centerY, radius, backgroundPaint)
 
         // Create a paint object for the background arc
         val backgroundArcPaint = Paint().apply {
             color = Color.LTGRAY // Customize background arc color
             style = Paint.Style.STROKE
-            strokeWidth = 24f
+            strokeWidth = 24f * scaleFactor
             isAntiAlias = true
             strokeCap = Paint.Cap.ROUND
             alpha = 100 // Set transparency for the background arc
@@ -267,9 +355,9 @@ class VolumeDialView @JvmOverloads constructor(
         // Restore the canvas to its original state
         canvas.restore()
 
-        // Draw the fixed indicator at the rightmost point (0 degrees)
-        val indicatorLength = 30f
-        val indicatorOffset = 15f
+        // Draw the fixed indicator at the rightmost point (0 degrees) - scaled
+        val indicatorLength = 30f * scaleFactor
+        val indicatorOffset = 15f * scaleFactor
         val indicatorStartX = centerX + (radius - indicatorLength) + indicatorOffset
         val indicatorStartY = centerY
         val indicatorEndX = centerX + radius + indicatorOffset
@@ -280,21 +368,22 @@ class VolumeDialView @JvmOverloads constructor(
     }
 
     private fun drawMarkersAndNumbers(canvas: Canvas, centerX: Float, centerY: Float) {
-        val gap = 30f
+        // Scale gaps and distances with the wheel size
+        val gap = 30f * scaleFactor
         val blackMarkerPaint = Paint().apply {
             color = Color.BLACK
             style = Paint.Style.STROKE
-            strokeWidth = 2f
+            strokeWidth = 2f * scaleFactor
             isAntiAlias = true
         }
 
-        // Use a consistent distance for all numbers
-        val numberGap = 60f
+        // Use a consistent distance for all numbers that scales
+        val numberGap = 60f * scaleFactor
         val numbersRadius = radius - gap - numberGap
 
         for (i in 0..10) {
             val angle = -135f + (i * 270f / 10f)
-            val markerLength = 15f
+            val markerLength = 15f * scaleFactor
             val angleRadians = Math.toRadians(angle.toDouble())
             val startX = centerX + (radius - markerLength - gap) * cos(angleRadians).toFloat()
             val startY = centerY + (radius - markerLength - gap) * sin(angleRadians).toFloat()
@@ -329,7 +418,7 @@ class VolumeDialView @JvmOverloads constructor(
             canvas.restore()
         }
 
-        // Draw the minor markers
+        // Draw the minor markers with scaled dimensions
         for (i in 0..9) {
             val startAngle = -135f + (i * 270f / 10f)
             val endAngle = -135f + ((i + 1) * 270f / 10f)
@@ -337,7 +426,7 @@ class VolumeDialView @JvmOverloads constructor(
             for (j in 1..9) {
                 val angle = startAngle + (j * (endAngle - startAngle) / 10f)
                 val angleRadians = Math.toRadians(angle.toDouble())
-                val markerLength = 10f
+                val markerLength = 10f * scaleFactor
                 val markerStartX = centerX + (radius - markerLength - gap) * cos(angleRadians).toFloat()
                 val markerStartY = centerY + (radius - markerLength - gap) * sin(angleRadians).toFloat()
                 val markerEndX = centerX + (radius - gap) * cos(angleRadians).toFloat()
@@ -400,11 +489,8 @@ class VolumeDialView @JvmOverloads constructor(
                     val deltaY = lastTouchY - y // Invert direction
                     accumulatedDelta += deltaY
 
-                    val prefs = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
-                    val sensitivity = prefs.getFloat("volume_sensitivity", 0.5f)
-
-
-                    // Lower sensitivity for finer control (0.1f instead of 0.3f) // Use the updated sensitivity value
+                    // Use fixed sensitivity instead of user-configurable
+                    val sensitivity = 0.3f // Fixed moderate sensitivity
 
                     // Only change volume when accumulated delta is enough
                     // This allows for fine-grained control
@@ -418,6 +504,9 @@ class VolumeDialView @JvmOverloads constructor(
                         if (volume != newVolume) {
                             volume = newVolume
                             volumeChangeListener?.onVolumeChanged(volume)
+
+                            // Provide haptic feedback for user interaction
+                            performHapticFeedback()
 
                             // Reset accumulated delta after volume change
                             accumulatedDelta = 0f
