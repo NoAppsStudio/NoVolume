@@ -29,6 +29,7 @@ import androidx.core.animation.doOnStart
 import androidx.core.app.NotificationCompat
 import kotlin.math.pow
 import kotlin.math.sqrt
+import android.widget.FrameLayout
 
 class VolumeOverlayService : Service() {
 
@@ -133,6 +134,9 @@ class VolumeOverlayService : Service() {
                 Log.d("VolumeOverlayService", "Slide right detected, opening classic volume bar")
             }
         })
+
+        // Initialize wheel size and haptic feedback settings
+        initializeSettings()
 
         volumeDial.setInteractionListener(object : VolumeDialView.InteractionListener {
             override fun onInteractionStart() {
@@ -247,6 +251,22 @@ class VolumeOverlayService : Service() {
             val position = intent.getIntExtra("POSITION", 50)
             updateOverlayPosition(position)
         }
+
+        if (intent?.action == "UPDATE_WHEEL_SIZE") {
+            val scaleFactor = intent.getFloatExtra("SCALE_FACTOR", 1.0f)
+            updateWheelSize(scaleFactor)
+        }
+
+        if (intent?.action == "UPDATE_HAPTIC_FEEDBACK") {
+            val enabled = intent.getBooleanExtra("HAPTIC_FEEDBACK_ENABLED", true)
+            updateHapticFeedback(enabled)
+        }
+
+        if (intent?.action == "UPDATE_HAPTIC_STRENGTH") {
+            val strength = intent.getIntExtra("HAPTIC_STRENGTH", 1)
+            updateHapticStrength(strength)
+        }
+
         if (intent?.action != "HIDE_OVERLAY") {
             showOverlay()
         }
@@ -473,6 +493,8 @@ class VolumeOverlayService : Service() {
 
         hideNumberHandler.removeCallbacks(hideNumberRunnable)
         hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+
+        showSystemVolumeBar()
     }
 
     private fun updateOverlayPosition(yOffset: Int) {
@@ -495,6 +517,58 @@ class VolumeOverlayService : Service() {
         } catch (e: SecurityException) {
             Log.e("VolumeOverlayService", "SecurityException showing system volume bar: ${e.message}")
         }
+    }
 
+    private fun initializeSettings() {
+        // Load and apply saved wheel size
+        val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val savedScaleFactor = appPrefs.getFloat("wheel_scale_factor", 0.975f) // Default for 75% slider position
+        volumeDial.setWheelSize(savedScaleFactor)
+
+        // Scale the volume number text size to match wheel size
+        val baseTextSize = 36f
+        val scaledTextSize = baseTextSize * savedScaleFactor
+        volumeNumber.textSize = scaledTextSize
+
+        // Set initial volume number position
+        val layoutParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
+        layoutParams.marginStart = (80 * savedScaleFactor).toInt()
+        volumeNumber.layoutParams = layoutParams
+
+        // Load and apply haptic feedback setting
+        val hapticEnabled = appPrefs.getBoolean("haptic_feedback_enabled", true)
+        volumeDial.setHapticEnabled(hapticEnabled)
+
+        // Load and apply haptic strength setting
+        val hapticStrength = appPrefs.getInt("haptic_strength", 1)
+        volumeDial.setHapticStrength(hapticStrength)
+
+        Log.d("VolumeOverlayService", "Settings initialized - Scale: $savedScaleFactor, Text: $scaledTextSize, Haptic: $hapticEnabled, Strength: $hapticStrength")
+    }
+
+    private fun updateWheelSize(scaleFactor: Float) {
+        volumeDial.setWheelSize(scaleFactor)
+
+        // Scale the volume number text size but keep position consistent
+        val baseTextSize = 36f // Base text size from XML
+        val scaledTextSize = baseTextSize * scaleFactor
+        volumeNumber.textSize = scaledTextSize
+
+        // Keep the volume number position consistent regardless of wheel size
+        val layoutParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
+        layoutParams.marginStart = (80 * scaleFactor).toInt() // Scale margin slightly with wheel
+        volumeNumber.layoutParams = layoutParams
+
+        Log.d("VolumeOverlayService", "Wheel size updated to scale factor: $scaleFactor, Text size: $scaledTextSize")
+    }
+
+    private fun updateHapticFeedback(enabled: Boolean) {
+        volumeDial.setHapticEnabled(enabled)
+        Log.d("VolumeOverlayService", "Haptic feedback updated - Enabled: $enabled")
+    }
+
+    private fun updateHapticStrength(strength: Int) {
+        volumeDial.setHapticStrength(strength)
+        Log.d("VolumeOverlayService", "Haptic strength updated - Strength: $strength")
     }
 }

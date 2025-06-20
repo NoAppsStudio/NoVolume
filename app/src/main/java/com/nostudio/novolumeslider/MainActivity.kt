@@ -14,6 +14,8 @@ import android.widget.Toast
 import kotlin.math.roundToInt
 import android.widget.SeekBar
 import android.text.TextWatcher
+import android.widget.Switch
+import android.view.HapticFeedbackConstants
 
 class MainActivity : AppCompatActivity() {
 
@@ -72,26 +74,70 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        val sensitivitySlider: SeekBar = findViewById(R.id.volumeSensitivitySlider)
+        // Wheel Size Slider
+        val wheelSizeSlider: SeekBar = findViewById(R.id.wheelSizeSlider)
+        wheelSizeSlider.max = 100
 
-        sensitivitySlider.max = 90
+        // Retrieve saved wheel size from SharedPreferences (default 75% for more shrinking)
+        val savedWheelSize = prefs.getInt("wheel_size", 75)
+        wheelSizeSlider.progress = savedWheelSize
 
-        val savedSensitivityProgress = prefs.getInt("volume_sensitivity_progress", 45).also {
-            // Ensure initial sensitivity is stored as float
-            if (!prefs.contains("volume_sensitivity")) {
-                val initialSensitivity = (it / 90f * 0.5f + 0.1f).toFloat()
-                prefs.edit().putFloat("volume_sensitivity", initialSensitivity).apply()
+        // Wheel size slider listener
+        wheelSizeSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                // Convert progress (0-100) to scale factor (0.6-1.1) - more shrinking than enlarging
+                val scaleFactor = 0.6f + (progress / 100f) * 0.5f
+                prefs.edit().putFloat("wheel_scale_factor", scaleFactor).apply()
+                prefs.edit().putInt("wheel_size", progress).apply()
+
+                // Update overlay service with new size
+                sendWheelSizeUpdate(scaleFactor)
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        // Haptic Feedback Switch
+        val hapticFeedbackSwitch: Switch = findViewById(R.id.hapticFeedbackSwitch)
+
+        // Retrieve saved haptic feedback setting (default enabled)
+        val hapticEnabled = prefs.getBoolean("haptic_feedback_enabled", true)
+        hapticFeedbackSwitch.isChecked = hapticEnabled
+
+        // Haptic feedback switch listener
+        hapticFeedbackSwitch.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("haptic_feedback_enabled", isChecked).apply()
+
+            // Send update to overlay service
+            sendHapticFeedbackUpdate(isChecked)
+
+            // Provide haptic feedback when toggling the switch
+            if (isChecked) {
+                hapticFeedbackSwitch.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             }
         }
 
-        sensitivitySlider.progress = savedSensitivityProgress
+        // Haptic Strength Slider
+        val hapticStrengthSlider: SeekBar = findViewById(R.id.hapticStrengthSlider)
+        hapticStrengthSlider.max = 2 // 0=Low, 1=Medium, 2=High
 
-        // Sensitivity slider listener
-        sensitivitySlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        // Retrieve saved haptic strength (default Medium = 1)
+        val savedHapticStrength = prefs.getInt("haptic_strength", 1)
+        hapticStrengthSlider.progress = savedHapticStrength
+
+        // Haptic strength slider listener
+        hapticStrengthSlider.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val sensitivity = progress / 90f * 0.5f + 0.1f
-                prefs.edit().putFloat("volume_sensitivity", sensitivity).apply()
-                prefs.edit().putInt("volume_sensitivity_progress", progress).apply() // Save progress
+                prefs.edit().putInt("haptic_strength", progress).apply()
+
+                // Send update to overlay service
+                sendHapticStrengthUpdate(progress)
+
+                // Provide haptic feedback when changing strength
+                if (hapticFeedbackSwitch.isChecked) {
+                    hapticFeedbackSwitch.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                }
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -115,7 +161,26 @@ class MainActivity : AppCompatActivity() {
         startService(intent)
     }
 
+    private fun sendWheelSizeUpdate(scaleFactor: Float) {
+        val intent = Intent(this, VolumeOverlayService::class.java)
+        intent.action = "UPDATE_WHEEL_SIZE"
+        intent.putExtra("SCALE_FACTOR", scaleFactor)
+        startService(intent)
+    }
 
+    private fun sendHapticFeedbackUpdate(isEnabled: Boolean) {
+        val intent = Intent(this, VolumeOverlayService::class.java)
+        intent.action = "UPDATE_HAPTIC_FEEDBACK"
+        intent.putExtra("HAPTIC_FEEDBACK_ENABLED", isEnabled)
+        startService(intent)
+    }
+
+    private fun sendHapticStrengthUpdate(strength: Int) {
+        val intent = Intent(this, VolumeOverlayService::class.java)
+        intent.action = "UPDATE_HAPTIC_STRENGTH"
+        intent.putExtra("HAPTIC_STRENGTH", strength)
+        startService(intent)
+    }
 
     private fun startOverlayService() {
         val serviceIntent = Intent(this, VolumeOverlayService::class.java)

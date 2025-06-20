@@ -91,12 +91,12 @@
         android:progressTint="@color/white"
         android:thumbTint="@color/white" />
 
-    <!-- Volume Sensitivity Label -->
+    <!-- Wheel Size Label -->
     <TextView
-        android:id="@+id/volumeSensitivityLabel"
+        android:id="@+id/wheelSizeLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Volume Change Sensitivity"
+        android:text="@string/wheel_size_label"
         android:textColor="@color/white"
         android:fontFamily="@font/ntype"
         android:textSize="18sp"
@@ -105,14 +105,63 @@
         android:layout_marginTop="30dp" />
 
     <SeekBar
-        android:id="@+id/volumeSensitivitySlider"
+        android:id="@+id/wheelSizeSlider"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@id/volumeSensitivityLabel"
+        android:layout_below="@id/wheelSizeLabel"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="20dp"
-        android:max="90"
-        android:progress="45"
+        android:max="100"
+        android:progress="75"
+        android:progressTint="@color/white"
+        android:thumbTint="@color/white" />
+
+    <!-- Haptic Feedback Label -->
+    <TextView
+        android:id="@+id/hapticFeedbackLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/haptic_feedback_label"
+        android:textColor="@color/white"
+        android:fontFamily="@font/ntype"
+        android:textSize="18sp"
+        android:layout_below="@id/wheelSizeSlider"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp" />
+
+    <Switch
+        android:id="@+id/hapticFeedbackSwitch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/hapticFeedbackLabel"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:checked="true"
+        android:thumbTint="@color/white"
+        android:trackTint="@color/white" />
+
+    <!-- Haptic Strength Label -->
+    <TextView
+        android:id="@+id/hapticStrengthLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/haptic_strength_label"
+        android:textColor="@color/white"
+        android:fontFamily="@font/ntype"
+        android:textSize="18sp"
+        android:layout_below="@id/hapticFeedbackSwitch"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp" />
+
+    <SeekBar
+        android:id="@+id/hapticStrengthSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/hapticStrengthLabel"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="20dp"
+        android:max="2"
+        android:progress="1"
         android:progressTint="@color/white"
         android:thumbTint="@color/white" />
 </RelativeLayout>
