@@ -230,18 +230,18 @@ class VolumeDialView @JvmOverloads constructor(
     private fun performHapticFeedback() {
         if (!isHapticEnabled) return
 
-        // Different intensities based on strength setting - FIXED INVERSION
+        // Haptic strength
         val duration = when (hapticStrength) {
-            0 -> 5L   // Low
+            0 -> 25L  // Low -> High duration
             1 -> 15L  // Medium
-            2 -> 25L  // High
+            2 -> 5L   // High -> Low duration
             else -> 15L
         }
 
         val amplitude = when (hapticStrength) {
-            0 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 4 else 50  // Low
+            0 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE else 150     // Low -> High amplitude
             1 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100 // Medium
-            2 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE else 150     // High
+            2 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 4 else 50  // High -> Low amplitude
             else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100
         }
 
