@@ -89,12 +89,31 @@ class VolumeOverlayService : Service() {
                 // Update system volume
                 updateSystemVolume(volume)
 
-                // Update UI
-                volumeNumber.text = volume.toString()
-                volumeNumber.visibility = View.VISIBLE
+                // Update UI - but check if we're in pop-out mode first
+                val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
 
-                // Don't hide number while touching
-                hideNumberHandler.removeCallbacks(hideNumberRunnable)
+                // Never show volume number in pop-out mode, regardless of touch interaction
+                if (volumeNumberDisplayEnabled && !volumeDial.isInPopOutMode()) {
+                    volumeNumber.text = volume.toString()
+                    volumeNumber.visibility = View.VISIBLE
+
+                    // Don't hide number while touching
+                    hideNumberHandler.removeCallbacks(hideNumberRunnable)
+                } else {
+                    volumeNumber.visibility = View.GONE
+                    // Cancel number hiding timer when hiding the number
+                    hideNumberHandler.removeCallbacks(hideNumberRunnable)
+                }
+
+                // Handle overlay timer extension for touch interaction (same as volume buttons)
+                if (volumeDial.isInPopOutMode()) {
+                    // In pop-out mode, extend overlay visibility timer
+                    hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+                }
+
+                Log.d("VolumeOverlayService", "Volume changed via touch - In pop-out: ${volumeDial.isInPopOutMode()}, Number visible: ${volumeNumber.visibility}")
             }
 
             override fun onTouchStart() {
@@ -105,26 +124,34 @@ class VolumeOverlayService : Service() {
                 hideNumberHandler.removeCallbacks(hideNumberRunnable)
                 hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
 
-                Log.d("VolumeOverlayService", "Touch started on dial")
+                Log.d("VolumeOverlayService", "Touch started on dial, pop-out mode: ${volumeDial.isInPopOutMode()}")
             }
 
             override fun onTouchEnd() {
                 // User stopped touching the dial
                 isTouching = false
 
-                // Schedule hiding the number after 1.5 seconds (this should be a setting btw)
-                hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
+                // Schedule hiding the number after 2 seconds (only if not in pop-out mode)
+                if (!volumeDial.isInPopOutMode()) {
+                    hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
+                }
 
-                // Schedule hiding the overlay after 1.5 seconds
-                hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+                // Schedule hiding the overlay - use different timing based on pop-out mode
+                if (volumeDial.isInPopOutMode()) {
+                    // In pop-out mode, extend the timer to match the 5-second auto-return + buffer
+                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+                } else {
+                    // Normal mode, use standard timing
+                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+                }
 
-                Log.d("VolumeOverlayService", "Touch ended on dial")
+                Log.d("VolumeOverlayService", "Touch ended on dial, pop-out mode: ${volumeDial.isInPopOutMode()}")
             }
 
             override fun onDismiss() {
-                // Hide overlay immediately when dismissed
-                hideOverlayCompletely()
-                Log.d("VolumeOverlayService", "Overlay dismissed by outside tap")
+                // For outside tap dismissal, use smooth reset during overlay fade
+                hideOverlayWithSmoothReset()
+                Log.d("VolumeOverlayService", "Overlay dismissed by outside tap - using smooth reset")
             }
 
             override fun onSlideRight() {  // Add this method
@@ -132,6 +159,17 @@ class VolumeOverlayService : Service() {
                 // Open classic Android volume bar
                 showSystemVolumeBar()
                 Log.d("VolumeOverlayService", "Slide right detected, opening classic volume bar")
+            }
+        })
+
+        // Set up pop-out animation listener
+        volumeDial.setPopOutAnimationListener(object : VolumeDialView.PopOutAnimationListener {
+            override fun onPopOutProgressChanged(progress: Float) {
+                updateOverlayForPopOut(progress)
+            }
+
+            override fun onPopOutModeChanged(isInPopOutMode: Boolean) {
+                handlePopOutModeChange(isInPopOutMode)
             }
         })
 
@@ -191,12 +229,32 @@ class VolumeOverlayService : Service() {
             Log.e("VolumeOverlayService", "Error adding full-screen touch view: ${e.message}")
         }
 
+        // Calculate initial width that can accommodate full circle at maximum wheel size
+        val metrics = resources.displayMetrics
+        val baseHeight = 350 // This matches the volumeDialContainer height in XML
+        val basePadding = 40f
+        val baseRadius = (Math.min(baseHeight, baseHeight) / 2f - basePadding)
+        val maxScaleFactor = 1.1f // Maximum possible wheel size
+        val maxRadius = baseRadius * maxScaleFactor
+        val progressArcRadius = maxRadius + (60f * maxScaleFactor) // Account for progress arc
+        val calculatedWidth = (progressArcRadius * 2.2f).toInt() // Wide enough for full circle with generous padding
+        val minWidth = 600 // Minimum width to ensure no clipping issues
+        val initialWidth = maxOf(calculatedWidth, minWidth)
+
+        // FINE-TUNING GUIDE:
+        // To increase container width for larger wheels, adjust these values:
+        // 1. Change "2.2f" to "2.5f" or higher for more horizontal padding
+        // 2. Increase "minWidth" from 600 to 700-800 for guaranteed minimum space
+        // 3. Increase "60f" (progress arc extension) to 80f-100f for thicker progress rings
+
+        Log.d("VolumeOverlayService", "Calculated overlay width: $initialWidth (calculated: $calculatedWidth, min: $minWidth, baseRadius: $baseRadius, maxRadius: $maxRadius)")
+
         // Create overlay layout parameters
         val params = WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
             format = PixelFormat.TRANSLUCENT
-            width = WindowManager.LayoutParams.WRAP_CONTENT
+            width = initialWidth // Use calculated width instead of WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
             gravity = Gravity.TOP or Gravity.START // Align to the top-left corner
             windowAnimations = android.R.style.Animation_Activity
@@ -205,7 +263,7 @@ class VolumeOverlayService : Service() {
         try {
             windowManager.addView(overlayView, params)
             overlayView.visibility = View.GONE // Initially hidden
-            Log.d("VolumeOverlayService", "Overlay view added")
+            Log.d("VolumeOverlayService", "Overlay view added with width: ${params.width}")
         } catch (e: Exception) {
             Log.e("VolumeOverlayService", "Error adding overlay view: ${e.message}")
         }
@@ -267,6 +325,16 @@ class VolumeOverlayService : Service() {
             updateHapticStrength(strength)
         }
 
+        if (intent?.action == "UPDATE_VOLUME_NUMBER_DISPLAY") {
+            val enabled = intent.getBooleanExtra("VOLUME_NUMBER_DISPLAY_ENABLED", true)
+            updateVolumeNumberDisplay(enabled)
+        }
+
+        if (intent?.action == "UPDATE_PROGRESS_BAR_DISPLAY") {
+            val enabled = intent.getBooleanExtra("PROGRESS_BAR_DISPLAY_ENABLED", true)
+            updateProgressBarDisplay(enabled)
+        }
+
         if (intent?.action != "HIDE_OVERLAY") {
             showOverlay()
         }
@@ -282,16 +350,45 @@ class VolumeOverlayService : Service() {
         // Update the dial view
         volumeDial.volume = volumePercentage
 
-        // Update the number
-        volumeNumber.text = volumePercentage.toString()
-        volumeNumber.visibility = View.VISIBLE
+        // Notify dial of external volume change to reset pop-out timer
+        volumeDial.onExternalVolumeChange()
 
-        // Only schedule hiding if not currently touching
-        if (!isTouching) {
-            // Schedule the number to disappear after 1 second
-            hideNumberHandler.removeCallbacks(hideNumberRunnable)
-            hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
+        // Handle overlay timer extension for volume button interaction
+        if (volumeDial.isInPopOutMode()) {
+            // In pop-out mode, extend overlay visibility timer
+            hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+            Log.d("VolumeOverlayService", "Volume button pressed in pop-out mode - extended overlay timer")
+        } else {
+            // In normal mode, reset overlay timer if not currently touching
+            if (!isTouching) {
+                hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+                hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+            }
         }
+
+        // Update the number only if display is enabled AND not in pop-out mode
+        val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+        val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
+
+        if (volumeNumberDisplayEnabled && !volumeDial.isInPopOutMode()) {
+            volumeNumber.text = volumePercentage.toString()
+            volumeNumber.visibility = View.VISIBLE
+
+            // Cancel any pending number hiding
+            hideNumberHandler.removeCallbacks(hideNumberRunnable)
+
+            // Only schedule hiding if not currently touching
+            if (!isTouching) {
+                hideNumberHandler.postDelayed(hideNumberRunnable, 2000)
+            }
+        } else {
+            volumeNumber.visibility = View.GONE
+            // Also cancel number hiding timer when hiding the number
+            hideNumberHandler.removeCallbacks(hideNumberRunnable)
+        }
+
+        Log.d("VolumeOverlayService", "Volume UI updated - External change, In pop-out: ${volumeDial.isInPopOutMode()}, Number visible: ${volumeNumber.visibility}")
     }
 
     private fun updateSystemVolume(volumePercentage: Int) {
@@ -318,13 +415,15 @@ class VolumeOverlayService : Service() {
 
                 // Also update system UI to match
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+
+                Log.d("VolumeOverlayService", "Precise volume set using AudioSystem API")
             } catch (e: Exception) {
                 Log.e("VolumeOverlayService", "Error setting precise volume: ${e.message}")
                 // Fallback to standard volume setting
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
             }
         } else {
-            // Older Android versions (Fallback)
+            // Android 7-8.1 (API 24-27) - Use standard AudioManager
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
         }
 
@@ -335,9 +434,14 @@ class VolumeOverlayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "overlay_service_channel",
-                "Overlay Service",
+                "Volume Control Service",
                 NotificationManager.IMPORTANCE_LOW
-            )
+            ).apply {
+                description = "Manages the custom volume overlay service"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
         }
@@ -345,11 +449,13 @@ class VolumeOverlayService : Service() {
 
     private fun startForegroundServiceWithNotification() {
         val notification = NotificationCompat.Builder(this, "overlay_service_channel")
-            .setContentTitle("Volume Control")
-            .setContentText("Custom volume control is active")
+            .setContentTitle("Volume Control Active")
+            .setContentText("Custom volume control overlay is running")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)
+            .setShowWhen(false)
             .build()
 
         startForeground(1, notification)
@@ -361,6 +467,11 @@ class VolumeOverlayService : Service() {
         if (overlayView.visibility != View.VISIBLE) {
             isOverlayVisible = true
             isShowingAnimation = true
+
+            // Ensure we always start in semi-circle state when showing overlay
+            if (volumeDial.isInPopOutMode()) {
+                volumeDial.forceReturnToSemiCircle()
+            }
 
             // Position the overlay initially
             overlayView.translationX = -overlayView.width.toFloat() * 0.5f
@@ -399,10 +510,12 @@ class VolumeOverlayService : Service() {
             Log.d("VolumeOverlayService", "Overlay already visible, skipping show animation")
         }
 
-        // Only schedule hiding if not currently touching
+        // Only schedule hiding if not currently touching - respect pop-out mode timing
         if (!isTouching) {
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-            hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+            val timeout = if (volumeDial.isInPopOutMode()) 7000L else 2000L
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, timeout)
+            Log.d("VolumeOverlayService", "showOverlay() - scheduled hide timeout: ${timeout}ms, pop-out mode: ${volumeDial.isInPopOutMode()}")
         }
     }
 
@@ -450,10 +563,13 @@ class VolumeOverlayService : Service() {
                     overlayView.visibility = View.GONE
                     overlayView.alpha = 0f
                     isShowingAnimation = false
+
+                    // Reset to semi-circle state AFTER animation completes for smooth transition
+                    resetToSemiCircleState()
                 }
             }
 
-            Log.d("VolumeOverlayService", "Overlay hidden with animations")
+            Log.d("VolumeOverlayService", "Overlay hidden with animations - will reset after completion")
 
             // Make the full-screen touch view non-interactive AND invisible
             fullScreenTouchView.visibility = View.GONE
@@ -526,13 +642,13 @@ class VolumeOverlayService : Service() {
         volumeDial.setWheelSize(savedScaleFactor)
 
         // Scale the volume number text size to match wheel size
-        val baseTextSize = 36f
+        val baseTextSize = 45f
         val scaledTextSize = baseTextSize * savedScaleFactor
         volumeNumber.textSize = scaledTextSize
 
         // Set initial volume number position
         val layoutParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
-        layoutParams.marginStart = (80 * savedScaleFactor).toInt()
+        layoutParams.marginStart = (10 * savedScaleFactor).toInt()
         volumeNumber.layoutParams = layoutParams
 
         // Load and apply haptic feedback setting
@@ -543,20 +659,47 @@ class VolumeOverlayService : Service() {
         val hapticStrength = appPrefs.getInt("haptic_strength", 1)
         volumeDial.setHapticStrength(hapticStrength)
 
-        Log.d("VolumeOverlayService", "Settings initialized - Scale: $savedScaleFactor, Text: $scaledTextSize, Haptic: $hapticEnabled, Strength: $hapticStrength")
+        // Load and apply volume number display setting
+        val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
+        volumeNumber.visibility = if (volumeNumberDisplayEnabled) View.VISIBLE else View.GONE
+        volumeDial.setVolumeNumberDisplayEnabled(volumeNumberDisplayEnabled)
+
+        // Load and apply progress bar display setting
+        val progressBarDisplayEnabled = appPrefs.getBoolean("progress_bar_display_enabled", true)
+        volumeDial.setProgressBarDisplayEnabled(progressBarDisplayEnabled)
+
+        Log.d("VolumeOverlayService", "Settings initialized - Scale: $savedScaleFactor, Text: $scaledTextSize, Haptic: $hapticEnabled, Strength: $hapticStrength, VolumeDisplay: $volumeNumberDisplayEnabled")
     }
 
     private fun updateWheelSize(scaleFactor: Float) {
         volumeDial.setWheelSize(scaleFactor)
 
         // Scale the volume number text size but keep position consistent
-        val baseTextSize = 36f // Base text size from XML
+        val baseTextSize = 45f // Base text size from XML
         val scaledTextSize = baseTextSize * scaleFactor
         volumeNumber.textSize = scaledTextSize
 
+        // Update overlay width to accommodate new wheel size
+        try {
+            val params = overlayView.layoutParams as WindowManager.LayoutParams
+            val baseHeight = 350
+            val basePadding = 40f
+            val baseRadius = (Math.min(baseHeight, baseHeight) / 2f - basePadding)
+            val radius = baseRadius * scaleFactor
+            val progressArcRadius = radius + (60f * scaleFactor)
+            val calculatedWidth = (progressArcRadius * 2.2f).toInt()
+            val minWidth = 600
+            val newWidth = maxOf(calculatedWidth, minWidth)
+            params.width = newWidth
+            windowManager.updateViewLayout(overlayView, params)
+            Log.d("VolumeOverlayService", "Updated overlay width for wheel size: $newWidth")
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error updating overlay width for wheel size: ${e.message}")
+        }
+
         // Keep the volume number position consistent regardless of wheel size
         val layoutParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
-        layoutParams.marginStart = (80 * scaleFactor).toInt() // Scale margin slightly with wheel
+        layoutParams.marginStart = (10 * scaleFactor).toInt()
         volumeNumber.layoutParams = layoutParams
 
         Log.d("VolumeOverlayService", "Wheel size updated to scale factor: $scaleFactor, Text size: $scaledTextSize")
@@ -570,5 +713,153 @@ class VolumeOverlayService : Service() {
     private fun updateHapticStrength(strength: Int) {
         volumeDial.setHapticStrength(strength)
         Log.d("VolumeOverlayService", "Haptic strength updated - Strength: $strength")
+    }
+
+    private fun updateVolumeNumberDisplay(enabled: Boolean) {
+        volumeNumber.visibility = if (enabled) View.VISIBLE else View.GONE
+        volumeDial.setVolumeNumberDisplayEnabled(enabled)
+        Log.d("VolumeOverlayService", "Volume number display updated - Enabled: $enabled")
+    }
+
+    private fun updateProgressBarDisplay(enabled: Boolean) {
+        volumeDial.setProgressBarDisplayEnabled(enabled)
+        Log.d("VolumeOverlayService", "Progress bar display updated - Enabled: $enabled")
+    }
+
+    private fun handlePopOutModeChange(isInPopOutMode: Boolean) {
+        if (isInPopOutMode) {
+            // Entering pop-out mode - extend overlay visibility
+            hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+            // Set a longer timeout for pop-out mode (7 seconds to accommodate 5s + 2s buffer)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+            Log.d("VolumeOverlayService", "Entered pop-out mode - extended overlay visibility")
+        } else {
+            // Exiting pop-out mode - return to normal timing
+            hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+            Log.d("VolumeOverlayService", "Exited pop-out mode - normal overlay timing")
+        }
+    }
+
+    private fun updateOverlayForPopOut(progress: Float) {
+        try {
+            // Calculate the base radius for the dial (this should match the calculation in VolumeDialView)
+            val baseHeight = 350 // This matches the volumeDialContainer height in XML
+            val basePadding = 40f
+            val baseRadius = (Math.min(baseHeight, baseHeight) / 2f - basePadding)
+            val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val scaleFactor = appPrefs.getFloat("wheel_scale_factor", 0.975f)
+            val radius = baseRadius * scaleFactor
+
+            // Always hide volume number during any pop-out animation or when in pop-out mode
+            if (volumeDial.isInPopOutMode()) {
+                volumeNumber.visibility = View.GONE
+            } else {
+                // Only show if volume number display is enabled in settings and not in pop-out mode
+                val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
+                volumeNumber.visibility = if (volumeNumberDisplayEnabled) View.VISIBLE else View.GONE
+
+                // Update volume number position to move with the center of the dial
+                val volumeNumberParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
+                val baseMargin = (10 * scaleFactor).toInt()
+                val popOutOffset = (radius * progress).toInt()
+                volumeNumberParams.marginStart = baseMargin + popOutOffset
+                volumeNumber.layoutParams = volumeNumberParams
+            }
+
+            Log.d("VolumeOverlayService", "Pop-out progress: $progress, In pop-out mode: ${volumeDial.isInPopOutMode()}, Volume number visibility: ${volumeNumber.visibility}")
+
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error updating overlay for pop-out: ${e.message}")
+        }
+    }
+
+    private fun resetToSemiCircleState() {
+        try {
+            // Force the dial to exit pop-out mode and return to semi-circle
+            if (volumeDial.isInPopOutMode()) {
+                volumeDial.forceReturnToSemiCircle()
+
+                // Cancel all timers related to pop-out mode
+                hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+                hideNumberHandler.removeCallbacks(hideNumberRunnable)
+
+                // Reset volume number visibility to user preference
+                val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+                val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
+                volumeNumber.visibility = if (volumeNumberDisplayEnabled) View.VISIBLE else View.GONE
+
+                Log.d("VolumeOverlayService", "Reset to semi-circle state - volume number visibility: ${volumeNumber.visibility}")
+            }
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error resetting to semi-circle state: ${e.message}")
+        }
+    }
+
+    private fun hideOverlayWithSmoothReset() {
+        if (overlayView.visibility != View.GONE) {
+            isShowingAnimation = true
+            isOverlayVisible = false
+
+            // Start smooth pop-in animation simultaneously with overlay fade for seamless transition
+            if (volumeDial.isInPopOutMode()) {
+                volumeDial.smoothReturnToSemiCircle()
+            }
+
+            // Slide out to the left and fade out
+            val slideOutAnim = ObjectAnimator.ofFloat(overlayView, "translationX", 0f, -overlayView.width.toFloat() * 0.5f)
+            val fadeOutAnim = ObjectAnimator.ofFloat(overlayView, "alpha", 1f, 0f)
+
+            AnimatorSet().apply {
+                playTogether(slideOutAnim, fadeOutAnim)
+                duration = 400
+                start()
+                doOnEnd {
+                    overlayView.visibility = View.GONE
+                    overlayView.alpha = 0f
+                    isShowingAnimation = false
+
+                    // Clean up any remaining state after animation
+                    cleanupAfterHide()
+                }
+            }
+
+            Log.d("VolumeOverlayService", "Overlay hiding with smooth reset animation")
+
+            // Make the full-screen touch view non-interactive AND invisible
+            fullScreenTouchView.visibility = View.GONE
+
+            // Update the parameters to make sure it doesn't intercept touches
+            val params = fullScreenTouchView.layoutParams as WindowManager.LayoutParams
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            try {
+                windowManager.updateViewLayout(fullScreenTouchView, params)
+            } catch (e: Exception) {
+                Log.e("VolumeOverlayService", "Error updating full screen view params: ${e.message}")
+            }
+        }
+    }
+
+    private fun cleanupAfterHide() {
+        try {
+            // Cancel all timers
+            hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
+            hideNumberHandler.removeCallbacks(hideNumberRunnable)
+
+            // Reset volume number visibility to user preference
+            val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
+            val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
+            volumeNumber.visibility = if (volumeNumberDisplayEnabled) View.VISIBLE else View.GONE
+
+            // Reset volume number position to base margin
+            val volumeNumberParams = volumeNumber.layoutParams as FrameLayout.LayoutParams
+            val scaleFactor = appPrefs.getFloat("wheel_scale_factor", 0.975f)
+            volumeNumberParams.marginStart = (10 * scaleFactor).toInt()
+            volumeNumber.layoutParams = volumeNumberParams
+
+            Log.d("VolumeOverlayService", "Cleanup after hide completed")
+        } catch (e: Exception) {
+            Log.e("VolumeOverlayService", "Error during cleanup after hide: ${e.message}")
+        }
     }
 }

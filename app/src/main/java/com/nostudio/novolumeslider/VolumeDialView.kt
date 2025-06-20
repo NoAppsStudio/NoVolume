@@ -21,6 +21,10 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.Build
 import android.view.Gravity
+import android.os.VibratorManager
+import android.os.Looper
+import android.util.Log
+import androidx.core.animation.doOnEnd
 
 class VolumeDialView @JvmOverloads constructor(
     context: Context,
@@ -33,7 +37,7 @@ class VolumeDialView @JvmOverloads constructor(
         fun onVolumeChanged(volume: Int)
         fun onTouchStart()
         fun onTouchEnd()
-        fun onDismiss() // New callback for dismissal
+        fun onDismiss()
         fun onSlideRight()
     }
 
@@ -41,10 +45,20 @@ class VolumeDialView @JvmOverloads constructor(
         fun onInteractionStart()
     }
 
+    interface PopOutAnimationListener {
+        fun onPopOutProgressChanged(progress: Float)
+        fun onPopOutModeChanged(isInPopOutMode: Boolean)
+    }
+
     private var interactionListener: InteractionListener? = null
+    private var popOutAnimationListener: PopOutAnimationListener? = null
 
     fun setInteractionListener(listener: InteractionListener) {
         interactionListener = listener
+    }
+
+    fun setPopOutAnimationListener(listener: PopOutAnimationListener) {
+        popOutAnimationListener = listener
     }
 
     // Listener variable
@@ -130,7 +144,7 @@ class VolumeDialView @JvmOverloads constructor(
     private var isTouching = false
 
     private val backgroundPaint = Paint().apply {
-        color = Color.parseColor("#F5F5F5") //make this a variable
+        color = Color.parseColor("#F5F5F5")
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -155,7 +169,7 @@ class VolumeDialView @JvmOverloads constructor(
         style = Paint.Style.FILL
         isAntiAlias = true
         strokeWidth = 7f
-        strokeCap = Paint.Cap.ROUND // Rounded ends for this too
+        strokeCap = Paint.Cap.ROUND
     }
 
     private val numbersPaint = Paint().apply {
@@ -176,7 +190,7 @@ class VolumeDialView @JvmOverloads constructor(
         set(value) {
             val newValue = value.coerceIn(0, 100)
             if (field != newValue) {
-                // Trigger haptic feedback for volume changes
+                // Trigger haptic feedback
                 if (lastVolumeForHaptic != newValue && lastVolumeForHaptic != -1) {
                     performHapticFeedback()
                 }
@@ -185,29 +199,33 @@ class VolumeDialView @JvmOverloads constructor(
                 // Only animate if we're not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
-                        duration = 90 // Adjust duration for smooth animation  (adjusted for smoother by Aleks)
-                        //add haptic here too (10ms or 20ms)
+                        duration = 90
                         start()
                     }
                 } else {
-                    // If we're touching, update immediately without animation
                     animatedVolume = newValue
                 }
             }
             field = newValue
         }
 
-    // Internal variable for smooth animation
+    // Internal variable for animation
     private var animatedVolume: Int = volume
         set(value) {
             field = value
-            invalidate() // Redraw at each step for animation effect
+            invalidate() // Redraw for animation effect
         }
 
     private var animationDuration: Int = 600
 
-    // Wheel size scaling factor (0.5 to 1.5)
+    // Wheel size scaling factor (0.6 to 1.1)
     private var scaleFactor: Float = 1.0f
+
+    // Volume number display state -
+    private var isVolumeNumberDisplayEnabled: Boolean = true
+
+    // Progress bar display state
+    private var isProgressBarDisplayEnabled: Boolean = true
 
     // Haptic feedback properties
     private var isHapticEnabled: Boolean = true
@@ -216,7 +234,15 @@ class VolumeDialView @JvmOverloads constructor(
     private var hapticStrength: Int = 1 // 0=Low, 1=Medium, 2=High
 
     init {
-        vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // API 31+ - Use VibratorManager
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            // API 24-30
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
     }
 
     fun setHapticEnabled(enabled: Boolean) {
@@ -230,25 +256,26 @@ class VolumeDialView @JvmOverloads constructor(
     private fun performHapticFeedback() {
         if (!isHapticEnabled) return
 
-        // Haptic strength
+        // Haptic Strength values
         val duration = when (hapticStrength) {
-            0 -> 25L  // Low -> High duration
+            0 -> 25L  // Low - High duration
             1 -> 15L  // Medium
-            2 -> 5L   // High -> Low duration
+            2 -> 5L   // High -Low duration
             else -> 15L
         }
 
         val amplitude = when (hapticStrength) {
-            0 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE else 150     // Low -> High amplitude
-            1 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100 // Medium
-            2 -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 4 else 50  // High -> Low amplitude
-            else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) VibrationEffect.DEFAULT_AMPLITUDE / 2 else 100
+            0 -> VibrationEffect.DEFAULT_AMPLITUDE     // Low - High amplitude
+            1 -> VibrationEffect.DEFAULT_AMPLITUDE / 2 // Medium
+            2 -> VibrationEffect.DEFAULT_AMPLITUDE / 4 // High - Low amplitude
+            else -> VibrationEffect.DEFAULT_AMPLITUDE / 2
         }
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator?.vibrate(VibrationEffect.createOneShot(duration, amplitude))
             } else {
+                // For API 24-25 suppress deprecation
                 @Suppress("DEPRECATION")
                 vibrator?.vibrate(duration)
             }
@@ -260,6 +287,8 @@ class VolumeDialView @JvmOverloads constructor(
 
     fun setWheelSize(scaleFactor: Float) {
         this.scaleFactor = scaleFactor.coerceIn(0.6f, 1.1f)
+        // Update text size with new scale factor
+        updateDialTextSize()
         // Trigger size recalculation
         onSizeChanged(width, height, 0, 0)
         invalidate()
@@ -273,15 +302,9 @@ class VolumeDialView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
 
-        // Get the screen width dynamically
-        val metrics = context.resources.displayMetrics
-        val screenWidth = metrics.widthPixels
+        // Don't constrain parent width - let the overlay service handle container sizing
 
-        // Set the width of the parent FrameLayout dynamically to the screen width
-        val parentLayout = parent as? FrameLayout
-        parentLayout?.layoutParams?.width = screenWidth
-
-        // Align the view to the left (adjust X position) - FIXED ALIGNMENT
+        // Align the view
         val layoutParams = layoutParams as? FrameLayout.LayoutParams
         layoutParams?.leftMargin = 0
         layoutParams?.rightMargin = 0
@@ -292,11 +315,8 @@ class VolumeDialView @JvmOverloads constructor(
         val basePadding = 40f // Reduced padding for closer to edge
         val baseRadius = Math.min(w, h) / 2f - basePadding
 
-        // Apply scaling
+        //  Scaling apply
         radius = baseRadius * scaleFactor
-
-        // Position for semi-circle - center should be AT the screen edge
-        centerX = 0f // Center at screen edge for perfect semi-circle
         centerY = h / 2f
 
         // Scale progress arc radius proportionally
@@ -308,24 +328,44 @@ class VolumeDialView @JvmOverloads constructor(
         indicatorPaint.strokeWidth = 7f * scaleFactor
 
         // Scale text size for numbers on the dial
-        numbersPaint.textSize = 48f * scaleFactor
+        updateDialTextSize()
+
+        updateCenterXAndOval()
+    }
+
+    private fun updateCenterXAndOval() {
+        // Calculate centerX based on pop-out animation progress
+        // In semi-stae mode: centerX = 0 (at screen edge)
+        // In full-state mode: centerX = radius (fully visible circle)
+        centerX = popOutAnimationProgress * radius
 
         oval.set(centerX - progressArcRadius, centerY - progressArcRadius, centerX + progressArcRadius, centerY + progressArcRadius)
     }
 
     var startAngle: Float = 75f  // Default starting angle
-    var endAngle: Float = 224f  // Default ending angle
+    var endAngle: Float = 224f  // Ending angle
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
+        // Update centerX and oval based on current animation progress
+        updateCenterXAndOval()
+
         // Save the canvas state before transformations
         canvas.save()
 
-        // Clip to only show the right half (semi-circle)
-        canvas.clipRect(centerX, 0f, width.toFloat(), height.toFloat())
+        // Dynamic clipping based on pop-out animation
+        if (isPopOutMode) {
+            // In pop-out mode, progressively show more of the circle from right semi to full circle
+            // Start from right edge (centerX) and expand leftward as animation progresses
+            val clipLeft = centerX - (radius * popOutAnimationProgress)
+            canvas.clipRect(clipLeft, 0f, width.toFloat(), height.toFloat())
+        } else {
+            // In semi-circle mode, clip to only show the right half
+            canvas.clipRect(centerX, 0f, width.toFloat(), height.toFloat())
+        }
 
-        // Draw the full background circle (but only right half will be visible)
+        // Draw the full background circle
         canvas.drawCircle(centerX, centerY, radius, backgroundPaint)
 
         // Create a paint object for the background arc
@@ -338,12 +378,14 @@ class VolumeDialView @JvmOverloads constructor(
             alpha = 100 // Set transparency for the background arc
         }
 
-        // Draw the full background arc (always at 100% volume level)
-        canvas.drawArc(oval, startAngle, -(endAngle - startAngle), false, backgroundArcPaint)
+        // Draw the full background arc (always at 100% volume level) - only if progress bar is enabled
+        if (isProgressBarDisplayEnabled) {
+            canvas.drawArc(oval, startAngle, -(endAngle - startAngle), false, backgroundArcPaint)
 
-        // Now draw the animated volume progress arc
-        val sweepAngle = -(animatedVolume * (endAngle - startAngle)) / 100f
-        canvas.drawArc(oval, startAngle, sweepAngle, false, progressPaint)
+            // Now draw the animated volume progress arc
+            val sweepAngle = -(animatedVolume * (endAngle - startAngle)) / 100f
+            canvas.drawArc(oval, startAngle, sweepAngle, false, progressPaint)
+        }
 
         // Rotate the canvas to align with the animated volume progress
         val rotationAngle = (135f - (animatedVolume * (280f - 10f) / 100f))
@@ -438,13 +480,174 @@ class VolumeDialView @JvmOverloads constructor(
     }
 
     // Variables to track touch movement and sliding
-    // Variables to track touch movement and sliding
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var hasMoved = false
     private val touchThreshold = 5f // Better balance between responsiveness and stability
     private var lastTouchY = 0f // Track last Y position for vertical sliding
     private var accumulatedDelta = 0f // Accumulate small movements for fine control
+
+    // Pop-out animation variables
+    private var isPopOutMode = false
+    private var popOutAnimationProgress = 0f
+    private var longPressDetected = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        if (!hasMoved && isTouching) {
+            longPressDetected = true
+            animatePopOut()
+            // Provide stronger haptic feedback for pop-out
+            performLongPressHapticFeedback()
+        }
+    }
+    private val longPressDelay = 500L // 500ms for long press detection
+
+    // Auto-return timer for pop-out mode
+    private val popOutReturnHandler = Handler(Looper.getMainLooper())
+    private val popOutReturnRunnable = Runnable {
+        if (isPopOutMode && !isTouching) {
+            animatePopIn()
+        }
+    }
+    private val popOutReturnDelay = 5000L // 5 seconds
+
+    private fun performLongPressHapticFeedback() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Stronger vibration for pop-out activation
+                vibrator?.vibrate(VibrationEffect.createOneShot(50L, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(50L)
+            }
+        } catch (e: Exception) {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
+    }
+
+    private fun animatePopOut() {
+        if (isPopOutMode) return
+
+        val animator = ObjectAnimator.ofFloat(this, "popOutProgress", 0f, 1f).apply {
+            duration = 300
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener {
+                popOutAnimationProgress = it.animatedValue as Float
+                invalidate()
+                // Update the parent layout to accommodate the new positioning
+                updatePopOutLayout()
+            }
+            doOnEnd {
+                // Start the auto-return timer when pop-out animation completes
+                schedulePopOutReturn()
+            }
+        }
+        isPopOutMode = true
+        // Notify listener that we entered pop-out mode
+        popOutAnimationListener?.onPopOutModeChanged(true)
+        animator.start()
+    }
+
+    private fun animatePopIn() {
+        if (!isPopOutMode) return
+
+        // Cancel any pending auto-return
+        cancelPopOutReturn()
+
+        val animator = ObjectAnimator.ofFloat(this, "popOutProgress", 1f, 0f).apply {
+            duration = 250
+            interpolator = DecelerateInterpolator(1.2f)
+            addUpdateListener {
+                popOutAnimationProgress = it.animatedValue as Float
+                invalidate()
+                updatePopOutLayout()
+            }
+            doOnEnd {
+                isPopOutMode = false
+                // Notify listener that we exited pop-out mode
+                popOutAnimationListener?.onPopOutModeChanged(false)
+            }
+        }
+        animator.start()
+    }
+
+    // Property for ObjectAnimator
+    fun setPopOutProgress(progress: Float) {
+        popOutAnimationProgress = progress
+        invalidate()
+        updatePopOutLayout()
+        // Notify listener of progress change
+        popOutAnimationListener?.onPopOutProgressChanged(progress)
+    }
+
+    fun getPopOutProgress(): Float {
+        return popOutAnimationProgress
+    }
+
+    private fun updatePopOutLayout() {
+        // Notify parent layout to update positioning
+        val parentLayout = parent as? FrameLayout
+        parentLayout?.requestLayout()
+    }
+
+    private fun schedulePopOutReturn() {
+        // Cancel any existing timer
+        cancelPopOutReturn()
+        // Schedule new timer only if not currently touching
+        if (!isTouching) {
+            popOutReturnHandler.postDelayed(popOutReturnRunnable, popOutReturnDelay)
+        }
+    }
+
+    private fun cancelPopOutReturn() {
+        popOutReturnHandler.removeCallbacks(popOutReturnRunnable)
+    }
+
+    // Call this when volume changes from external sources (volume buttons)
+    fun onExternalVolumeChange() {
+        if (isPopOutMode) {
+            // Reset the timer when volume changes externally
+            schedulePopOutReturn()
+        }
+    }
+
+    // Getter for pop-out mode state
+    fun isInPopOutMode(): Boolean {
+        return isPopOutMode
+    }
+
+    // Force return to semi-circle state (used when overlay is dismissed)
+    fun forceReturnToSemiCircle() {
+        if (isPopOutMode) {
+            // Cancel all timers and animations
+            cancelPopOutReturn()
+            longPressHandler.removeCallbacks(longPressRunnable)
+
+            // Immediately set state to semi-circle without animation
+            isPopOutMode = false
+            popOutAnimationProgress = 0f
+            longPressDetected = false
+
+            // Update the visual state
+            updateCenterXAndOval()
+            invalidate()
+            updatePopOutLayout()
+
+            // Notify listener that we exited pop-out mode
+            popOutAnimationListener?.onPopOutModeChanged(false)
+
+            Log.d("VolumeDialView", "Forced return to semi-circle state")
+        }
+    }
+
+    // Smooth return to semi-circle state with animation (used during overlay fade)
+    fun smoothReturnToSemiCircle() {
+        if (isPopOutMode) {
+            // Use the existing smooth pop-in animation
+            animatePopIn()
+            Log.d("VolumeDialView", "Smooth return to semi-circle state with animation")
+        }
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         // Call interaction listener at the beginning
@@ -459,8 +662,9 @@ class VolumeDialView @JvmOverloads constructor(
 
         val distance = Math.sqrt(((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)).toDouble()).toFloat()
 
-        // Ignore touches outside the dial
-        if (distance > radius+200f) {
+        // Ignore touches outside the dial (adjust for pop-out mode)
+        val touchRadius = if (isPopOutMode) radius + 200f else radius + 200f
+        if (distance > touchRadius) {
             return false
         }
 
@@ -471,7 +675,17 @@ class VolumeDialView @JvmOverloads constructor(
                 initialTouchY = y
                 lastTouchY = y
                 hasMoved = false
+                longPressDetected = false
                 accumulatedDelta = 0f
+
+                // Cancel auto-return timer when user starts touching
+                if (isPopOutMode) {
+                    cancelPopOutReturn()
+                }
+
+                // Start long press detection
+                longPressHandler.postDelayed(longPressRunnable, longPressDelay)
+
                 volumeChangeListener?.onTouchStart()
                 return true
             }
@@ -479,47 +693,51 @@ class VolumeDialView @JvmOverloads constructor(
                 val dx = Math.abs(x - initialTouchX)
                 val dy = Math.abs(y - initialTouchY)
 
-                // If movement exceeds threshold, process as a slide
-                if (dy > touchThreshold) { // we only need the y here, right?
+                // If movement exceeds threshold, cancel long press and process as a slide
+                if (dy > touchThreshold || dx > touchThreshold) {
                     hasMoved = true
+                    longPressHandler.removeCallbacks(longPressRunnable)
 
-                    // HAPTIC FEEDBACK HANDLER should be inserted here
+                    // Only process vertical sliding if not in pop-out animation phase
+                    if (!longPressDetected && dy > touchThreshold) {
+                        // Calculate delta and accumulate it
+                        val deltaY = lastTouchY - y // Invert direction
+                        accumulatedDelta += deltaY
 
-                    // Calculate delta and accumulate it
-                    val deltaY = lastTouchY - y // Invert direction
-                    accumulatedDelta += deltaY
+                        // Use fixed sensitivity instead of user-configurable
+                        val sensitivity = 0.3f // Fixed moderate sensitivity
 
-                    // Use fixed sensitivity instead of user-configurable
-                    val sensitivity = 0.3f // Fixed moderate sensitivity
+                        // Only change volume when accumulated delta is enough
+                        if (Math.abs(accumulatedDelta) >= 2f / sensitivity) {
+                            val volumeDelta = (accumulatedDelta * sensitivity).roundToInt()
 
-                    // Only change volume when accumulated delta is enough
-                    // This allows for fine-grained control
-                    if (Math.abs(accumulatedDelta) >= 2f / sensitivity) {
-                        val volumeDelta = (accumulatedDelta * sensitivity).roundToInt()
+                            // Calculate new volume based on relative movement
+                            val newVolume = (volume + volumeDelta).coerceIn(0, 100)
 
-                        // Calculate new volume based on relative movement
-                        val newVolume = (volume + volumeDelta).coerceIn(0, 100)
+                            // Update volume if it changed
+                            if (volume != newVolume) {
+                                volume = newVolume
+                                volumeChangeListener?.onVolumeChanged(volume)
 
-                        // Update volume if it changed
-                        if (volume != newVolume) {
-                            volume = newVolume
-                            volumeChangeListener?.onVolumeChanged(volume)
+                                // Provide haptic feedback for user interaction
+                                performHapticFeedback()
 
-                            // Provide haptic feedback for user interaction
-                            performHapticFeedback()
-
-                            // Reset accumulated delta after volume change
-                            accumulatedDelta = 0f
+                                // Reset accumulated delta after volume change
+                                accumulatedDelta = 0f
+                            }
                         }
-                    }
 
-                    // Save current position for next comparison
-                    lastTouchY = y
+                        // Save current position for next comparison
+                        lastTouchY = y
+                    }
                 }
+
+                // Handle horizontal slide for classic volume bar
                 val horizontalDelta = x - initialTouchX
-                if (horizontalDelta > 50 && dx >  dy && !hasMoved) {
+                if (horizontalDelta > 50 && dx > dy && !hasMoved && !longPressDetected) {
                     // Significant slide to the right, trigger action
                     hasMoved = true
+                    longPressHandler.removeCallbacks(longPressRunnable)
                     isTouching = false
                     volumeChangeListener?.onSlideRight()
                     return true
@@ -529,6 +747,13 @@ class VolumeDialView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 isTouching = false
+                longPressHandler.removeCallbacks(longPressRunnable)
+
+                // If we're in pop-out mode, restart the auto-return timer instead of immediately returning
+                if (isPopOutMode) {
+                    schedulePopOutReturn()
+                }
+
                 volumeChangeListener?.onTouchEnd()
                 return true
             }
@@ -583,6 +808,26 @@ class VolumeDialView @JvmOverloads constructor(
             volume = volumePercent
             volumeChangeListener?.onVolumeChanged(volume)
         }
+    }
+
+    fun setVolumeNumberDisplayEnabled(enabled: Boolean) {
+        isVolumeNumberDisplayEnabled = enabled
+        // Update text size immediately
+        updateDialTextSize()
+        invalidate()
+    }
+
+    fun setProgressBarDisplayEnabled(enabled: Boolean) {
+        isProgressBarDisplayEnabled = enabled
+        invalidate()
+    }
+
+    private fun updateDialTextSize() {
+        // Base text size with conditional scaling based on volume number display
+        val baseTextSize = 48f
+        val volumeNumberBoost = if (isVolumeNumberDisplayEnabled) 1.0f else 1.0f // 20% larger when volume number is hidden
+        val finalTextSize = baseTextSize * scaleFactor * volumeNumberBoost
+        numbersPaint.textSize = finalTextSize
     }
 
 }

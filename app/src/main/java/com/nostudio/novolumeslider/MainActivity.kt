@@ -16,17 +16,34 @@ import android.widget.SeekBar
 import android.text.TextWatcher
 import android.widget.Switch
 import android.view.HapticFeedbackConstants
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResultLauncher
+import android.os.Looper
 
 class MainActivity : AppCompatActivity() {
 
     private val PREFS_NAME = "AppPrefs"
 
+    private lateinit var overlayPermissionLauncher: ActivityResultLauncher<Intent>
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        val hideOverlayHandler = Handler()
+        val hideOverlayHandler = Handler(Looper.getMainLooper())
         val hideOverlayRunnable = Runnable { sendOverlayVisibilityUpdate(false) }
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Initialize modern activity result launcher
+        overlayPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            // Check if overlay permission was granted
+            if (Settings.canDrawOverlays(this)) {
+                startOverlayService()
+            } else {
+                Toast.makeText(this, "Overlay permission is required", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         val overlayPermissionButton: Button = findViewById(R.id.overlayPermissionButton)
         overlayPermissionButton.setOnClickListener {
@@ -35,7 +52,7 @@ class MainActivity : AppCompatActivity() {
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:$packageName")
                 )
-                startActivityForResult(intent, 100) // Request overlay permission
+                overlayPermissionLauncher.launch(intent) // Use modern API
             } else {
                 startOverlayService()
             }
@@ -98,8 +115,8 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
-        // Haptic Feedback Switch
-        val hapticFeedbackSwitch: Switch = findViewById(R.id.hapticFeedbackSwitch)
+        // Haptic Feedback Switch (now in the toggle row)
+        val hapticFeedbackSwitch: Switch = findViewById(R.id.hapticToggleSwitch)
 
         // Retrieve saved haptic feedback setting (default enabled)
         val hapticEnabled = prefs.getBoolean("haptic_feedback_enabled", true)
@@ -144,6 +161,46 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
 
+        // Volume Number Display Switch
+        val volumeNumberDisplaySwitch: Switch = findViewById(R.id.volumeNumberDisplaySwitch)
+
+        // Retrieve saved volume number display setting (default enabled)
+        val volumeNumberEnabled = prefs.getBoolean("volume_number_display_enabled", true)
+        volumeNumberDisplaySwitch.isChecked = volumeNumberEnabled
+
+        // Volume number display switch listener
+        volumeNumberDisplaySwitch.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("volume_number_display_enabled", isChecked).apply()
+
+            // Send update to overlay service
+            sendVolumeNumberDisplayUpdate(isChecked)
+
+            // Provide haptic feedback when toggling the switch
+            if (hapticFeedbackSwitch.isChecked) {
+                volumeNumberDisplaySwitch.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+        }
+
+        // Progress Bar Display Switch
+        val progressBarDisplaySwitch: Switch = findViewById(R.id.progressBarDisplaySwitch)
+
+        // Retrieve saved progress bar display setting (default enabled)
+        val progressBarEnabled = prefs.getBoolean("progress_bar_display_enabled", true)
+        progressBarDisplaySwitch.isChecked = progressBarEnabled
+
+        // Progress bar display switch listener
+        progressBarDisplaySwitch.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("progress_bar_display_enabled", isChecked).apply()
+
+            // Send update to overlay service
+            sendProgressBarDisplayUpdate(isChecked)
+
+            // Provide haptic feedback when toggling the switch
+            if (hapticFeedbackSwitch.isChecked) {
+                progressBarDisplaySwitch.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
+        }
+
         // EditText Listener
 
     }
@@ -182,6 +239,20 @@ class MainActivity : AppCompatActivity() {
         startService(intent)
     }
 
+    private fun sendVolumeNumberDisplayUpdate(isEnabled: Boolean) {
+        val intent = Intent(this, VolumeOverlayService::class.java)
+        intent.action = "UPDATE_VOLUME_NUMBER_DISPLAY"
+        intent.putExtra("VOLUME_NUMBER_DISPLAY_ENABLED", isEnabled)
+        startService(intent)
+    }
+
+    private fun sendProgressBarDisplayUpdate(isEnabled: Boolean) {
+        val intent = Intent(this, VolumeOverlayService::class.java)
+        intent.action = "UPDATE_PROGRESS_BAR_DISPLAY"
+        intent.putExtra("PROGRESS_BAR_DISPLAY_ENABLED", isEnabled)
+        startService(intent)
+    }
+
     private fun startOverlayService() {
         val serviceIntent = Intent(this, VolumeOverlayService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -191,15 +262,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == 100) { // Overlay permission request code
-            if (Settings.canDrawOverlays(this)) {
-                startOverlayService()
-            } else {
-                Toast.makeText(this, "Overlay permission is required", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
 }

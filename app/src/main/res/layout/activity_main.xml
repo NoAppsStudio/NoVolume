@@ -116,30 +116,6 @@
         android:progressTint="@color/white"
         android:thumbTint="@color/white" />
 
-    <!-- Haptic Feedback Label -->
-    <TextView
-        android:id="@+id/hapticFeedbackLabel"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/haptic_feedback_label"
-        android:textColor="@color/white"
-        android:fontFamily="@font/ntype"
-        android:textSize="18sp"
-        android:layout_below="@id/wheelSizeSlider"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="30dp" />
-
-    <Switch
-        android:id="@+id/hapticFeedbackSwitch"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_below="@id/hapticFeedbackLabel"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="20dp"
-        android:checked="true"
-        android:thumbTint="@color/white"
-        android:trackTint="@color/white" />
-
     <!-- Haptic Strength Label -->
     <TextView
         android:id="@+id/hapticStrengthLabel"
@@ -149,7 +125,7 @@
         android:textColor="@color/white"
         android:fontFamily="@font/ntype"
         android:textSize="18sp"
-        android:layout_below="@id/hapticFeedbackSwitch"
+        android:layout_below="@id/wheelSizeSlider"
         android:layout_centerHorizontal="true"
         android:layout_marginTop="30dp" />
 
@@ -164,4 +140,98 @@
         android:progress="1"
         android:progressTint="@color/white"
         android:thumbTint="@color/white" />
+
+    <!-- UI Toggles Row -->
+    <LinearLayout
+        android:id="@+id/uiTogglesContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/hapticStrengthSlider"
+        android:layout_marginTop="30dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp">
+
+        <!-- Haptic Feedback Column -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Haptic"
+                android:textColor="@color/white"
+                android:fontFamily="@font/ntype"
+                android:textSize="16sp"
+                android:gravity="center" />
+
+            <Switch
+                android:id="@+id/hapticToggleSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:checked="true"
+                android:thumbTint="@color/white"
+                android:trackTint="@color/white" />
+        </LinearLayout>
+
+        <!-- Number Display Column -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/volume_number_display_label"
+                android:textColor="@color/white"
+                android:fontFamily="@font/ntype"
+                android:textSize="16sp"
+                android:gravity="center" />
+
+            <Switch
+                android:id="@+id/volumeNumberDisplaySwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:checked="true"
+                android:thumbTint="@color/white"
+                android:trackTint="@color/white" />
+        </LinearLayout>
+
+        <!-- Progress Bar Display Column -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/progress_bar_display_label"
+                android:textColor="@color/white"
+                android:fontFamily="@font/ntype"
+                android:textSize="16sp"
+                android:gravity="center" />
+
+            <Switch
+                android:id="@+id/progressBarDisplaySwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:checked="true"
+                android:thumbTint="@color/white"
+                android:trackTint="@color/white" />
+        </LinearLayout>
+    </LinearLayout>
 </RelativeLayout>
