@@ -89,7 +89,7 @@ class VolumeOverlayService : Service() {
                 // Update system volume
                 updateSystemVolume(volume)
 
-                // Update UI - but check if we're in pop-out mode first
+                // Update UI - but check mode first
                 val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
                 val volumeNumberDisplayEnabled = appPrefs.getBoolean("volume_number_display_enabled", true)
 
@@ -110,7 +110,7 @@ class VolumeOverlayService : Service() {
                 if (volumeDial.isInPopOutMode()) {
                     // In pop-out mode, extend overlay visibility timer
                     hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 4000)
                 }
 
                 Log.d("VolumeOverlayService", "Volume changed via touch - In pop-out: ${volumeDial.isInPopOutMode()}, Number visible: ${volumeNumber.visibility}")
@@ -139,7 +139,7 @@ class VolumeOverlayService : Service() {
                 // Schedule hiding the overlay - use different timing based on pop-out mode
                 if (volumeDial.isInPopOutMode()) {
                     // In pop-out mode, extend the timer to match the 5-second auto-return + buffer
-                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+                    hideOverlayHandler.postDelayed(hideOverlayRunnable, 4000)
                 } else {
                     // Normal mode, use standard timing
                     hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
@@ -240,12 +240,6 @@ class VolumeOverlayService : Service() {
         val calculatedWidth = (progressArcRadius * 2.2f).toInt() // Wide enough for full circle with generous padding
         val minWidth = 600 // Minimum width to ensure no clipping issues
         val initialWidth = maxOf(calculatedWidth, minWidth)
-
-        // FINE-TUNING GUIDE:
-        // To increase container width for larger wheels, adjust these values:
-        // 1. Change "2.2f" to "2.5f" or higher for more horizontal padding
-        // 2. Increase "minWidth" from 600 to 700-800 for guaranteed minimum space
-        // 3. Increase "60f" (progress arc extension) to 80f-100f for thicker progress rings
 
         Log.d("VolumeOverlayService", "Calculated overlay width: $initialWidth (calculated: $calculatedWidth, min: $minWidth, baseRadius: $baseRadius, maxRadius: $maxRadius)")
 
@@ -357,7 +351,7 @@ class VolumeOverlayService : Service() {
         if (volumeDial.isInPopOutMode()) {
             // In pop-out mode, extend overlay visibility timer
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-            hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 4000)
             Log.d("VolumeOverlayService", "Volume button pressed in pop-out mode - extended overlay timer")
         } else {
             // In normal mode, reset overlay timer if not currently touching
@@ -468,7 +462,7 @@ class VolumeOverlayService : Service() {
             isOverlayVisible = true
             isShowingAnimation = true
 
-            // Ensure we always start in semi-circle state when showing overlay
+            // Ensure start in semi-mode when showing overlay
             if (volumeDial.isInPopOutMode()) {
                 volumeDial.forceReturnToSemiCircle()
             }
@@ -513,7 +507,7 @@ class VolumeOverlayService : Service() {
         // Only schedule hiding if not currently touching - respect pop-out mode timing
         if (!isTouching) {
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-            val timeout = if (volumeDial.isInPopOutMode()) 7000L else 2000L
+            val timeout = if (volumeDial.isInPopOutMode()) 4000L else 2000L
             hideOverlayHandler.postDelayed(hideOverlayRunnable, timeout)
             Log.d("VolumeOverlayService", "showOverlay() - scheduled hide timeout: ${timeout}ms, pop-out mode: ${volumeDial.isInPopOutMode()}")
         }
@@ -642,7 +636,7 @@ class VolumeOverlayService : Service() {
         volumeDial.setWheelSize(savedScaleFactor)
 
         // Scale the volume number text size to match wheel size
-        val baseTextSize = 45f
+        val baseTextSize = 40f
         val scaledTextSize = baseTextSize * savedScaleFactor
         volumeNumber.textSize = scaledTextSize
 
@@ -675,7 +669,7 @@ class VolumeOverlayService : Service() {
         volumeDial.setWheelSize(scaleFactor)
 
         // Scale the volume number text size but keep position consistent
-        val baseTextSize = 45f // Base text size from XML
+        val baseTextSize = 40f
         val scaledTextSize = baseTextSize * scaleFactor
         volumeNumber.textSize = scaledTextSize
 
@@ -731,12 +725,12 @@ class VolumeOverlayService : Service() {
             // Entering pop-out mode - extend overlay visibility
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
             // Set a longer timeout for pop-out mode (7 seconds to accommodate 5s + 2s buffer)
-            hideOverlayHandler.postDelayed(hideOverlayRunnable, 7000)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 4000)
             Log.d("VolumeOverlayService", "Entered pop-out mode - extended overlay visibility")
         } else {
             // Exiting pop-out mode - return to normal timing
             hideOverlayHandler.removeCallbacks(hideOverlayRunnable)
-            hideOverlayHandler.postDelayed(hideOverlayRunnable, 2000)
+            hideOverlayHandler.postDelayed(hideOverlayRunnable, 500) //semi mode snap back
             Log.d("VolumeOverlayService", "Exited pop-out mode - normal overlay timing")
         }
     }
@@ -744,14 +738,14 @@ class VolumeOverlayService : Service() {
     private fun updateOverlayForPopOut(progress: Float) {
         try {
             // Calculate the base radius for the dial (this should match the calculation in VolumeDialView)
-            val baseHeight = 350 // This matches the volumeDialContainer height in XML
+            val baseHeight = 350
             val basePadding = 40f
             val baseRadius = (Math.min(baseHeight, baseHeight) / 2f - basePadding)
             val appPrefs = getSharedPreferences("AppPrefs", Context.MODE_PRIVATE)
             val scaleFactor = appPrefs.getFloat("wheel_scale_factor", 0.975f)
             val radius = baseRadius * scaleFactor
 
-            // Always hide volume number during any pop-out animation or when in pop-out mode
+            // Hide volume number during pop-out
             if (volumeDial.isInPopOutMode()) {
                 volumeNumber.visibility = View.GONE
             } else {

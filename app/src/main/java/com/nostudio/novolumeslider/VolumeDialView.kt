@@ -128,10 +128,24 @@ class VolumeDialView @JvmOverloads constructor(
 
             // If touch is outside the dial radius
             if (distance > radius) {
-                if (event.action == MotionEvent.ACTION_DOWN) {
-                    // Notify listener to dismiss the overlay
-                    volumeChangeListener?.onDismiss()
-                    return@setOnTouchListener true
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        // Notify listener to dismiss the overlay
+                        volumeChangeListener?.onDismiss()
+                        return@setOnTouchListener true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        // Clean up any stuck touch state if user releases outside
+                        if (isCurrentlyTouching) {
+                            Log.d("VolumeDialView", "Touch released outside dial - cleaning up stuck state")
+                            cleanupTouch()
+                            volumeChangeListener?.onTouchEnd()
+                            if (isPopOutMode) {
+                                schedulePopOutReturn()
+                            }
+                            return@setOnTouchListener true
+                        }
+                    }
                 }
             }
             false // Let other touches pass through
@@ -196,7 +210,7 @@ class VolumeDialView @JvmOverloads constructor(
                 }
                 lastVolumeForHaptic = newValue
 
-                // Only animate if we're not currently touching the dial
+                // Only animate if not currently touching the dial
                 if (!isTouching) {
                     ObjectAnimator.ofInt(this, "animatedVolume", field, newValue).apply {
                         duration = 90
@@ -405,7 +419,7 @@ class VolumeDialView @JvmOverloads constructor(
         val indicatorEndX = centerX + radius + indicatorOffset
         val indicatorEndY = centerY
 
-        // The indicator line remains in its original position because we are using the restored canvas
+        // Indicator line remains in its original position in the restored canvas
         canvas.drawLine(indicatorStartX, indicatorStartY, indicatorEndX, indicatorEndY, indicatorPaint)
     }
 
@@ -487,6 +501,10 @@ class VolumeDialView @JvmOverloads constructor(
     private var lastTouchY = 0f // Track last Y position for vertical sliding
     private var accumulatedDelta = 0f // Accumulate small movements for fine control
 
+    // Touch area management
+    private var isCurrentlyTouching = false
+    private var hasExitedTouchArea = false
+
     // Pop-out animation variables
     private var isPopOutMode = false
     private var popOutAnimationProgress = 0f
@@ -509,7 +527,7 @@ class VolumeDialView @JvmOverloads constructor(
             animatePopIn()
         }
     }
-    private val popOutReturnDelay = 5000L // 5 seconds
+    private val popOutReturnDelay = 3000L // 3 seconds
 
     private fun performLongPressHapticFeedback() {
         try {
@@ -543,7 +561,7 @@ class VolumeDialView @JvmOverloads constructor(
             }
         }
         isPopOutMode = true
-        // Notify listener that we entered pop-out mode
+        // Notify listener when in pop-out mode
         popOutAnimationListener?.onPopOutModeChanged(true)
         animator.start()
     }
@@ -564,7 +582,7 @@ class VolumeDialView @JvmOverloads constructor(
             }
             doOnEnd {
                 isPopOutMode = false
-                // Notify listener that we exited pop-out mode
+                // Notify listener when pop-out mode exited
                 popOutAnimationListener?.onPopOutModeChanged(false)
             }
         }
@@ -633,7 +651,7 @@ class VolumeDialView @JvmOverloads constructor(
             invalidate()
             updatePopOutLayout()
 
-            // Notify listener that we exited pop-out mode
+            // Notify listener when pop-out mode exited
             popOutAnimationListener?.onPopOutModeChanged(false)
 
             Log.d("VolumeDialView", "Forced return to semi-circle state")
@@ -662,15 +680,23 @@ class VolumeDialView @JvmOverloads constructor(
 
         val distance = Math.sqrt(((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)).toDouble()).toFloat()
 
-        // Ignore touches outside the dial (adjust for pop-out mode)
+        // Define touch radius (generous area for interaction)
         val touchRadius = if (isPopOutMode) radius + 200f else radius + 200f
-        if (distance > touchRadius) {
+        val isInsideTouchArea = distance <= touchRadius
+
+        // Handle touches that start outside the dial
+        if (event.action == MotionEvent.ACTION_DOWN && !isInsideTouchArea) {
             return false
         }
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                // Only proceed if touch started inside the area
+                if (!isInsideTouchArea) return false
+
                 isTouching = true
+                isCurrentlyTouching = true
+                hasExitedTouchArea = false
                 initialTouchX = x
                 initialTouchY = y
                 lastTouchY = y
@@ -690,6 +716,15 @@ class VolumeDialView @JvmOverloads constructor(
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                // Check if touch moved outside in the touch area
+                if (!isInsideTouchArea && !hasExitedTouchArea) {
+                    hasExitedTouchArea = true
+                    Log.d("VolumeDialView", "Touch moved outside dial area - preparing for cleanup")
+                }
+
+                // Continue processing if started inside wheel
+                if (!isCurrentlyTouching) return false
+
                 val dx = Math.abs(x - initialTouchX)
                 val dy = Math.abs(y - initialTouchY)
 
@@ -698,8 +733,8 @@ class VolumeDialView @JvmOverloads constructor(
                     hasMoved = true
                     longPressHandler.removeCallbacks(longPressRunnable)
 
-                    // Only process vertical sliding if not in pop-out animation phase
-                    if (!longPressDetected && dy > touchThreshold) {
+                    // Only process volume changes if still in touch area
+                    if (isInsideTouchArea && !longPressDetected && dy > touchThreshold) {
                         // Calculate delta and accumulate it
                         val deltaY = lastTouchY - y // Invert direction
                         accumulatedDelta += deltaY
@@ -732,29 +767,33 @@ class VolumeDialView @JvmOverloads constructor(
                     }
                 }
 
-                // Handle horizontal slide for classic volume bar
-                val horizontalDelta = x - initialTouchX
-                if (horizontalDelta > 50 && dx > dy && !hasMoved && !longPressDetected) {
-                    // Significant slide to the right, trigger action
-                    hasMoved = true
-                    longPressHandler.removeCallbacks(longPressRunnable)
-                    isTouching = false
-                    volumeChangeListener?.onSlideRight()
-                    return true
+                // Handle horizontal slide for classic volume bar (only if inside area)
+                if (isInsideTouchArea) {
+                    val horizontalDelta = x - initialTouchX
+                    if (horizontalDelta > 50 && dx > dy && !hasMoved && !longPressDetected) {
+                        // Significant slide to the right, trigger action
+                        hasMoved = true
+                        longPressHandler.removeCallbacks(longPressRunnable)
+                        cleanupTouch()
+                        volumeChangeListener?.onSlideRight()
+                        return true
+                    }
                 }
 
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                isTouching = false
-                longPressHandler.removeCallbacks(longPressRunnable)
+                cleanupTouch()
 
-                // If we're in pop-out mode, restart the auto-return timer instead of immediately returning
+                // Always call onTouchEnd to ensure proper state cleanup
+                volumeChangeListener?.onTouchEnd()
+
+                // If in pop-out mode, restart the auto-return timer
                 if (isPopOutMode) {
                     schedulePopOutReturn()
                 }
 
-                volumeChangeListener?.onTouchEnd()
+                Log.d("VolumeDialView", "Touch ended - hasExitedTouchArea: $hasExitedTouchArea, final position: ($x, $y)")
                 return true
             }
         }
@@ -764,6 +803,14 @@ class VolumeDialView @JvmOverloads constructor(
 
     open fun isInteractionAllowed(): Boolean {
         return true // Interaction is allowed by default
+    }
+
+    private fun cleanupTouch() {
+        isTouching = false
+        isCurrentlyTouching = false
+        hasExitedTouchArea = false
+        longPressHandler.removeCallbacks(longPressRunnable)
+        Log.d("VolumeDialView", "Touch cleanup completed")
     }
 
     private fun updateVolumeFromTouch(x: Float, y: Float) {
@@ -787,11 +834,11 @@ class VolumeDialView @JvmOverloads constructor(
             angle <= 90 -> angle
             // If in bottom right quadrant (270-360), normalize to be contiguous with top right
             angle >= 270 -> angle - 360  // This makes 270° become -90°
-            // For angles outside our range (left semicircle)
+            // For angles outside range (left semicircle)
             else -> return
         }
 
-        // Restrict to our desired angle range
+        // Restrict to angle range
         if (normalizedAngle < minAngle || normalizedAngle > maxAngle) return
 
         // **INVERTED:** Change the direction of volume control.
@@ -812,7 +859,7 @@ class VolumeDialView @JvmOverloads constructor(
 
     fun setVolumeNumberDisplayEnabled(enabled: Boolean) {
         isVolumeNumberDisplayEnabled = enabled
-        // Update text size immediately
+        // Update text size
         updateDialTextSize()
         invalidate()
     }
@@ -823,9 +870,8 @@ class VolumeDialView @JvmOverloads constructor(
     }
 
     private fun updateDialTextSize() {
-        // Base text size with conditional scaling based on volume number display
         val baseTextSize = 48f
-        val volumeNumberBoost = if (isVolumeNumberDisplayEnabled) 1.0f else 1.0f // 20% larger when volume number is hidden
+        val volumeNumberBoost = if (isVolumeNumberDisplayEnabled) 1.0f else 1.0f
         val finalTextSize = baseTextSize * scaleFactor * volumeNumberBoost
         numbersPaint.textSize = finalTextSize
     }
