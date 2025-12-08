@@ -1,12 +1,21 @@
-#[Download here, it's finally on the play store!](https://play.google.com/store/apps/details?id=com.nostudio.novolumeslider)
+# Nothing Volume Overlay - Fork
+This is a fork of the novolume overlay created by [NoAppStudio](https://github.com/NoAppsStudio/NoVolume)
 
-### Beautiful NothingOS themed volume wheel, designed for nothing phones primarily.
+### Beautiful NothingOS themed volume wheel, designed for nothing phones.
 
-![image](https://github.com/user-attachments/assets/230eada1-3870-4e8a-9db4-0612a9c59aca)
+<table>
+  <tr>    
+    <td><img width="200" height="246" alt="Screenshot_20250911-104302 (1)" src="https://github.com/user-attachments/assets/eebe4434-3907-4934-a628-84637cde6ff9" /></td>
+    <td><img width="200" height="246" alt="Screenshot_20250911-104308 (1)" src="https://github.com/user-attachments/assets/fe21ee61-24f8-4fcf-a011-88ed73fbd3fd" /></td>
+    <td><img width="200" height="246" alt="Screenshot_20250911-104339 (1)" src="https://github.com/user-attachments/assets/661a58de-36ed-40f1-b24b-519d79beb5f0" /></td>
+  </tr>
+</table>
 
 # This app is in a early state, so these are the things to watch out for:
-  - During calls you cannot change your volume level
-  - Slide right to open the stock volume controls
-  - When rotating the circle with your finger, you need to release the finger WHILE in the circle, or else the circle will stay render until you touch it rotate it again
+  - The volume overlay doesnt work on phone settings page
+# Features
+  - Slide right for quick action buttons
+  - Touch and hold to pop out the circle
+  - Multi stream volume control implemented
 
-### Satisfying haptic feedback and animations are coming, and also a one-handed mode, which are unique features, so stay tuned!
+### Haptic feedback implemented with smooth animations, other features coming, maybe!! so stay tuned!

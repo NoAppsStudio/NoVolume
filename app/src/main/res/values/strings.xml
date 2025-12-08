@@ -2,4 +2,9 @@
     <string name="app_name">NoVolumeSlider</string>
     <string name="accessibility_service_label">Volume Key Interceptor</string>
     <string name="accessibility_service_description">Intercepts volume key presses to show a custom volume slider</string>
+    <string name="wheel_size_label">Wheel Size</string>
+    <string name="haptic_feedback_label">Haptic Feedback</string>
+    <string name="haptic_strength_label">Haptic Strength (Low/Med/High)</string>
+    <string name="volume_number_display_label">Aperture</string>
+    <string name="progress_bar_display_label">Bezel</string>
 </resources>

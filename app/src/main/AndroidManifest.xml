@@ -2,14 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Overlay and accessibility permissions -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.ACCESSIBILITY_ACCESS" />
+    
+    <!-- Service permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    
+    <!-- Audio control permissions -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
-
+    <uses-permission android:name="android.permission.VIBRATE" />
+    
+    <!-- Notification policy permissions -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
     <application
         android:allowBackup="true"
@@ -20,30 +26,33 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.NoVolumeSlider"
-        tools:targetApi="31">
+        android:hardwareAccelerated="true"
+        tools:targetApi="35">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-
         <service
             android:name=".VolumeOverlayService"
             android:enabled="true"
-            android:exported="true"
-            android:permission="android.permission.FOREGROUND_SERVICE"
-            android:foregroundServiceType="mediaPlayback"/>
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false"/>
 
         <service
             android:name=".VolumeKeyAccessibilityService"
             android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
+            android:exported="true"
+            android:enabled="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -52,7 +61,16 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-
+        <receiver
+            android:name=".VolumeChangeReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter android:priority="1000">
+                <action android:name="android.media.VOLUME_CHANGED_ACTION" />
+                <action android:name="android.media.RINGER_MODE_CHANGED" />
+                <action android:name="android.app.action.INTERRUPTION_FILTER_CHANGED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

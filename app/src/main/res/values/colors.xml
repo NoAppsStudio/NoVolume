@@ -1,7 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Legacy colors -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="red">#FF0000</color>
+
+    <!-- Light Theme Colors -->
+    <color name="volume_background_light">#F5F5F5</color>
+    <color name="volume_progress_light">#FFFFFF</color>
+    <color name="volume_text_light">#000000</color>
+    <color name="volume_marker_major_light">#FF0000</color>
+    <color name="volume_marker_minor_light">#000000</color>
+    <color name="volume_indicator_light">#000000</color>
+    <color name="volume_button_light">#FF0000</color>
+    <color name="volume_button_text_light">#FFFFFF</color>
+    <color name="volume_number_light">#000000</color>
+    <color name="volume_overlay_bg_light">#DDFFFFFF</color>
+    
+    <!-- Dark Theme Colors -->
+    <color name="volume_background_dark">#1D1E20</color>
+    <color name="volume_progress_dark">#FF0000</color>
+    <color name="volume_text_dark">#FFFFFF</color>
+    <color name="volume_marker_major_dark">#FF0000</color>
+    <color name="volume_marker_minor_dark">#FFFFFF</color>
+    <color name="volume_indicator_dark">#FFFFFF</color>
+    <color name="volume_button_dark">#FF0000</color>
+    <color name="volume_button_text_dark">#FFFFFF</color>
+    <color name="volume_number_dark">#FFFFFF</color>
+    <color name="volume_overlay_bg_dark">#DD1C1C1E</color>
+    
+    <!-- Accent colors for both themes -->
+    <color name="volume_accent_red">#FF0000</color>
+    <color name="volume_accent_gray">#1D1E20</color>
 
 </resources>
